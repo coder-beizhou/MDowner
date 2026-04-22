@@ -1,6 +1,6 @@
 {
   "name": "mdowner",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A Typora-like Markdown editor for Windows",
   "main": "src/main/index.js",
   "type": "commonjs",
@@ -44,6 +44,8 @@
     },
     "nsis": {
       "artifactName": "MDowner-Setup.exe",
+      "installerIcon": "assets/icons/icon.ico",
+      "uninstallerIcon": "assets/icons/icon.ico",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
