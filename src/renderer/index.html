@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MDowner</title>
+  <link rel="stylesheet" href="css/variables.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/editor.css">
+  <link rel="stylesheet" href="css/toolbar.css">
+  <link rel="stylesheet" href="css/outline.css">
+  <link rel="stylesheet" href="css/light.css" id="theme-light">
+  <link rel="stylesheet" href="css/dark.css" id="theme-dark" disabled>
+</head>
+<body>
+  <div id="app">
+    <!-- 工具栏 -->
+    <div id="toolbar">
+      <div class="toolbar-group">
+        <button id="btn-bold" title="加粗 (Ctrl+B)" data-command="bold">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M15.6 10.79c.97-.67 1.65-1.77 1.65-2.79 0-2.26-1.75-4-4-4H7v14h7.04c2.09 0 3.71-1.7 3.71-3.79 0-1.52-.86-2.82-2.15-3.42zM10 6.5h3c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5h-3v-3zm3.5 9H10v-3h3.5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5z"/></svg>
+        </button>
+        <button id="btn-italic" title="斜体 (Ctrl+I)" data-command="italic">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M10 4v3h2.21l-3.42 8H6v3h8v-3h-2.21l3.42-8H18V4z"/></svg>
+        </button>
+        <button id="btn-strike" title="删除线 (Ctrl+Shift+X)" data-command="strike">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M10 19h4v-3h-4v3zM5 4v3h5v3h4V7h5V4H5zM3 14h18v-2H3v2z"/></svg>
+        </button>
+        <button id="btn-code" title="行内代码 (Ctrl+E)" data-command="code">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0l4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z"/></svg>
+        </button>
+      </div>
+      
+      <div class="toolbar-divider"></div>
+      
+      <div class="toolbar-group">
+        <button id="btn-h1" title="标题1 (Ctrl+1)" data-command="h1">H1</button>
+        <button id="btn-h2" title="标题2 (Ctrl+2)" data-command="h2">H2</button>
+        <button id="btn-h3" title="标题3 (Ctrl+3)" data-command="h3">H3</button>
+        <button id="btn-h4" title="标题4 (Ctrl+4)" data-command="h4">H4</button>
+        <button id="btn-h5" title="标题5 (Ctrl+5)" data-command="h5">H5</button>
+        <button id="btn-h6" title="标题6 (Ctrl+6)" data-command="h6">H6</button>
+      </div>
+      
+      <div class="toolbar-divider"></div>
+      
+      <div class="toolbar-group">
+        <button id="btn-bullet" title="无序列表 (Ctrl+Shift+U)" data-command="bulletList">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M4 10.5c-.83 0-1.5.67-1.5 1.5s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5zm0-6c-.83 0-1.5.67-1.5 1.5S3.17 7.5 4 7.5 5.5 6.83 5.5 6 4.83 4.5 4 4.5zm0 12c-.83 0-1.5.68-1.5 1.5s.68 1.5 1.5 1.5 1.5-.68 1.5-1.5-.67-1.5-1.5-1.5zM7 19h14v-2H7v2zm0-6h14v-2H7v2zm0-8v2h14V5H7z"/></svg>
+        </button>
+        <button id="btn-ordered" title="有序列表 (Ctrl+Shift+O)" data-command="orderedList">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M2 17h2v.5H3v1h1v.5H2v1h3v-4H2v1zm1-9h1V4H2v1h1v3zm-1 3h1.8L2 13.1v.9h3v-1H3.2L5 10.9V10H2v1zm5-6v2h14V5H7zm0 14h14v-2H7v2zm0-6h14v-2H7v2z"/></svg>
+        </button>
+        <button id="btn-task" title="任务列表 (Ctrl+Shift+T)" data-command="taskList">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zM17.99 9l-1.41-1.42-6.59 6.59-2.58-2.57-1.42 1.41 4 3.99z"/></svg>
+        </button>
+      </div>
+      
+      <div class="toolbar-divider"></div>
+      
+      <div class="toolbar-group">
+        <button id="btn-quote" title="引用 (Ctrl+Shift+Q)" data-command="blockquote">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M6 17h3l2-4V7H5v6h3zm8 0h3l2-4V7h-6v6h3z"/></svg>
+        </button>
+        <button id="btn-codeblock" title="代码块 (Ctrl+Shift+E)" data-command="codeBlock">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0l4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z"/></svg>
+        </button>
+        <button id="btn-table" title="表格 (Ctrl+Shift+G)" data-command="table">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M20 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h15c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 2v3H5V5h15zm-5 5v4h-4v-4h4zM5 10h4v4H5v-4zm0 9v-4h4v4H5zm6 0v-4h4v4h-4zm9 0h-4v-4h4v4zm0-6h-4v-4h4v4z"/></svg>
+        </button>
+        <button id="btn-add-row" title="添加行" data-command="addRow">+行</button>
+        <button id="btn-delete-row" title="删除行" data-command="deleteRow">-行</button>
+        <button id="btn-add-col" title="添加列" data-command="addCol">+列</button>
+        <button id="btn-delete-col" title="删除列" data-command="deleteCol">-列</button>
+        <button id="btn-link" title="链接 (Ctrl+K)" data-command="link">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>
+        </button>
+        <button id="btn-image" title="图片" data-command="image">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+        </button>
+      </div>
+      
+      <div class="toolbar-divider"></div>
+      
+      <div class="toolbar-group">
+        <button id="btn-undo" title="撤销 (Ctrl+Z)" data-command="undo">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>
+        </button>
+        <button id="btn-redo" title="重做 (Ctrl+Y)" data-command="redo">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z"/></svg>
+        </button>
+      </div>
+      
+      <div class="toolbar-spacer"></div>
+      
+      <div class="toolbar-group">
+        <button id="btn-outline" title="大纲 (Ctrl+\)" data-command="outline">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3 9h14V7H3v2zm0 4h14v-2H3v2zm0 4h14v-2H3v2zm16 0h2v-2h-2v2zm0-10v2h2V7h-2zm0 6h2v-2h-2v2z"/></svg>
+        </button>
+        <button id="btn-theme" title="主题 (Ctrl+Shift+L)" data-command="theme">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
+        </button>
+      </div>
+    </div>
+    
+    <!-- 主内容区 -->
+    <div id="main">
+      <!-- 侧边栏 -->
+      <div id="sidebar">
+        <div id="outline-container">
+          <div class="sidebar-header">大纲</div>
+          <div id="outline"></div>
+        </div>
+      </div>
+      
+      <!-- 编辑器 -->
+      <div id="editor-container">
+        <div id="editor"></div>
+      </div>
+    </div>
+    
+    <!-- 状态栏 -->
+    <div id="statusbar">
+      <div id="status-words">字数: 0</div>
+      <div id="status-lines">行数: 1</div>
+      <div id="status-modified"></div>
+    </div>
+  </div>
+  
+  <!-- 应用脚本 -->
+  <script src="js/bundle.js"></script>
+</body>
+</html>
