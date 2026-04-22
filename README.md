@@ -71,6 +71,8 @@ npm start
 npm run build:all         # 一键构建：打包 + 生成 zip + 清理（推荐）
 npm run build:win         # 仅构建 portable + installer，不生成 zip
 
+```
+
 ### 项目结构
 
 ```
@@ -178,6 +180,8 @@ npm start
 ```bash
 npm run build:all         # One-click build: portable + installer + zip (recommended)
 npm run build:win         # Build portable + installer only, no zip
+
+```
 
 ### Project Structure
 
