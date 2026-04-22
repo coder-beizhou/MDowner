@@ -68,6 +68,7 @@ async function createWindow() {
     height: DEFAULT_CONFIG.windowBounds.height,
     minWidth: 800,
     minHeight: 600,
+    icon: path.join(__dirname, '../../assets/icons/icon.ico'),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
