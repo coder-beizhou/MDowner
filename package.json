@@ -1,6 +1,6 @@
 {
   "name": "mdowner",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "A Typora-like Markdown editor for Windows",
   "main": "src/main/index.js",
   "type": "commonjs",
@@ -29,11 +29,15 @@
       "target": [
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "assets/icons/icon.ico",
@@ -45,6 +49,7 @@
     "nsis": {
       "artifactName": "MDowner-Setup.exe",
       "installerIcon": "assets/icons/icon.ico",
+      "installerHeaderIcon": "assets/icons/icon.ico",
       "uninstallerIcon": "assets/icons/icon.ico",
       "oneClick": false,
       "perMachine": false,
@@ -78,7 +83,8 @@
     "highlight.js": "^11.9.0",
     "lowlight": "^3.1.0",
     "marked": "^11.1.0",
-    "puppeteer-core": "^21.7.0"
+    "puppeteer-core": "^21.7.0",
+    "turndown": "^7.2.4"
   },
   "devDependencies": {
     "electron": "^25.9.0",
