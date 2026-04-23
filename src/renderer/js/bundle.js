@@ -24783,6 +24783,7 @@ ${content}</tr>
           this.initSidebar();
           this.initStatusBar();
           this.bindIPCEvents();
+          this.initDragDrop();
           this.applyTheme(this.config.theme);
           this.applyConfig();
           console.log("MDowner initialized successfully");
@@ -25196,8 +25197,26 @@ ${content}</tr>
             item.addEventListener("click", () => {
               const pos = parseInt(item.dataset.pos);
               this.editor.commands.focus(pos);
+              const node = this.editor.view.nodeDOM(pos);
+              if (node) node.scrollIntoView({ behavior: "smooth", block: "center" });
               this.editor.commands.setTextSelection(pos);
             });
+          });
+        }
+        // 初始化拖拽文件
+        initDragDrop() {
+          document.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          });
+          document.addEventListener("drop", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const files = Array.from(e.dataTransfer.files);
+            if (files.length > 0) {
+              const paths = files.map((f) => f.path);
+              window.electronAPI.sendDroppedFiles(paths);
+            }
           });
         }
         // 初始化状态栏

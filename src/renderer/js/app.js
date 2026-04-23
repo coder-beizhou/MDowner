@@ -58,6 +58,9 @@ class MDownerApp {
     // 绑定IPC事件
     this.bindIPCEvents();
     
+    // 初始化拖拽
+    this.initDragDrop();
+    
     // 应用主题
     this.applyTheme(this.config.theme);
     
@@ -580,8 +583,30 @@ class MDownerApp {
       item.addEventListener('click', () => {
         const pos = parseInt(item.dataset.pos);
         this.editor.commands.focus(pos);
+        // 滚动到标题位置
+        const node = this.editor.view.nodeDOM(pos);
+        if (node) node.scrollIntoView({ behavior: "smooth", block: "center" });
         this.editor.commands.setTextSelection(pos);
       });
+    });
+  }
+  
+  // 初始化拖拽文件
+  initDragDrop() {
+    document.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    
+    document.addEventListener("drop", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length > 0) {
+        const paths = files.map(f => f.path);
+        window.electronAPI.sendDroppedFiles(paths);
+      }
     });
   }
   
