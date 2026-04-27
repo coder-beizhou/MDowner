@@ -71,6 +71,11 @@ class MDownerApp {
     this.applyConfig();
     
     console.log('MDowner initialized successfully');
+
+    // 通知主进程渲染器已就绪（主进程收到后才会发送启动文件）
+    if (window.electronAPI) {
+      window.electronAPI.sendRendererReady();
+    }
   }
   
   // 初始化编辑器

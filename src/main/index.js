@@ -98,12 +98,6 @@ async function createWindow() {
 
     // 发送配置到渲染进程
     mainWindow.webContents.send('config-loaded', config);
-
-    // 处理双击 .md 文件打开的启动参数
-    const startupFile = getFileFromArgv(process.argv);
-    if (startupFile) {
-      openFile(startupFile);
-    }
   });
 
   // 窗口关闭前检查
@@ -378,6 +372,13 @@ function updateTitle() {
 
 // 注册IPC处理程序
 function registerIPCHandlers() {
+  // 渲染进程就绪后，发送启动时通过命令行传入的文件
+  ipcMain.on('renderer-ready', () => {
+    const startupFile = getFileFromArgv(process.argv);
+    if (startupFile) {
+      openFile(startupFile);
+    }
+  });
   ipcMain.handle('get-content', async () => {
     if (!mainWindow || mainWindow.isDestroyed()) return '';
     // 通过执行渲染进程的JS获取编辑器HTML内容，然后转换为Markdown
