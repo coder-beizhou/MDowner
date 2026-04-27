@@ -225,7 +225,7 @@ function createMenu() {
               type: 'info',
               title: '关于 MDowner',
               message: `MDowner v${app.getVersion()}`,
-              detail: '一个类似 Typora 的 Markdown 编辑器'
+              detail: '一个类似 Typora 的 Markdown 编辑器\n\n✧ BE1ZH0U ✧'
             });
           }
         }

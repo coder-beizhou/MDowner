@@ -111,6 +111,14 @@ a:hover {
   font-weight: 500;
 }
 
+#status-signature {
+  margin-left: auto;
+  font-family: 'Segoe Script', 'Brush Script MT', 'Freestyle Script', cursive;
+  font-size: 12px;
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
 /* 代码字体 */
 code, pre {
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
