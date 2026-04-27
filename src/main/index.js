@@ -1,6 +1,8 @@
 const path = require('path');
 const fs = require('fs');
 const fsPromises = fs.promises;
+const TurndownService = require('turndown');
+const turndownService = new TurndownService();
 
 // 直接获取 Electron API
 const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
@@ -55,17 +57,13 @@ async function saveConfig(config) {
 
 // 创建主窗口
 async function createWindow() {
-  // 设置配置文件路径
-  CONFIG_PATH = path.join(app.getPath('userData'), 'config.json');
-  DRAFT_PATH = path.join(app.getPath('userData'), 'draft.md');
-
   const config = await loadConfig();
   
   mainWindow = new BrowserWindow({
-    x: DEFAULT_CONFIG.windowBounds.x,
-    y: DEFAULT_CONFIG.windowBounds.y,
-    width: DEFAULT_CONFIG.windowBounds.width,
-    height: DEFAULT_CONFIG.windowBounds.height,
+    x: config.windowBounds.x,
+    y: config.windowBounds.y,
+    width: config.windowBounds.width,
+    height: config.windowBounds.height,
     minWidth: 800,
     minHeight: 600,
     icon: path.join(__dirname, '../../assets/icons/icon.ico'),
@@ -105,76 +103,32 @@ async function createWindow() {
     if (isModified) {
       e.preventDefault();
       console.log('=== showing save dialog');
-      const result = await dialog.showMessageBox(mainWindow, {
-        type: 'question',
-        buttons: ['保存', '不保存', '取消'],
-        defaultId: 0,
-        title: '保存更改',
-        message: '文档已修改，是否保存更改？'
-      });
+      
+      try {
+        const result = await dialog.showMessageBox(mainWindow, {
+          type: 'question',
+          buttons: ['保存', '不保存', '取消'],
+          defaultId: 0,
+          title: '保存更改',
+          message: '文档已修改，是否保存更改？'
+        });
 
-      if (result.response === 0) {
-        // 选保存 -> 有路径直接保存，无路径另存为
-        if (currentFilePath) {
-          try {
-            const canInvoke = mainWindow && !mainWindow.isDestroyed() && typeof mainWindow.webContents?.invoke === 'function';
-            let content;
-            if (canInvoke) {
-              content = await mainWindow.webContents.invoke('get-content');
-            }
-            if (!content) {
-              // invoke 失败或超时，改为通知渲染进程保存
-              safeSend('save-file-and-close', currentFilePath);
-              return;
-            }
-            await fsPromises.writeFile(currentFilePath, content, 'utf-8');
-            isModified = false;
-            safeSend('file-saved');
-            updateTitle();
-            mainWindow.destroy();
-          } catch (error) {
-            safeSend('save-file-and-close', currentFilePath);
-            return;
-          }
-        } else {
-          const saveResult = await dialog.showSaveDialog(mainWindow, {
-            filters: [
-              { name: 'Markdown文件', extensions: ['md'] },
-              { name: '所有文件', extensions: ['*'] }
-            ],
-            defaultPath: '未命名.md'
-          });
-          if (!saveResult.canceled && saveResult.filePath) {
-            currentFilePath = saveResult.filePath;
-            const canInvoke = mainWindow && !mainWindow.isDestroyed() && typeof mainWindow.webContents?.invoke === 'function';
-            let content;
-            if (canInvoke) {
-              try {
-                content = await mainWindow.webContents.invoke('get-content');
-              } catch {
-                safeSend('save-file-and-close', currentFilePath);
-                return;
-              }
-            }
-            if (!content) {
-              safeSend('save-file-and-close', currentFilePath);
-              return;
-            }
-            await fsPromises.writeFile(currentFilePath, content, 'utf-8');
-            isModified = false;
-            safeSend('file-saved');
-            updateTitle();
+        if (result.response === 0) {
+          // 选保存 -> 调用saveFile函数处理保存逻辑
+          await saveFile();
+          // 保存完成后关闭窗口
+          if (!isModified) {
             mainWindow.destroy();
           }
+        } else if (result.response === 1) {
+          // 不保存，直接关
+          mainWindow.destroy();
         }
-        return;
-      } else if (result.response === 1) {
-        // 不保存，直接关
+        // 取消：什么都不做，窗口保持打开
+      } catch (error) {
+        console.error('Close dialog error:', error);
+        // 出错时强制关闭
         mainWindow.destroy();
-        return;
-      } else {
-        // 取消，不关闭
-        return;
       }
     }
   });
@@ -270,7 +224,7 @@ function createMenu() {
             dialog.showMessageBox(mainWindow, {
               type: 'info',
               title: '关于 MDowner',
-              message: 'MDowner v1.0.0',
+              message: `MDowner v${app.getVersion()}`,
               detail: '一个类似 Typora 的 Markdown 编辑器'
             });
           }
@@ -349,9 +303,9 @@ async function saveFile() {
 
   if (currentFilePath) {
     try {
-      // 获取编辑器HTML内容
-      // 获取编辑器JSON格式（保留完整文档结构）
-      const content = await mainWindow.webContents.executeJavaScript('document.querySelector(".ProseMirror") ? JSON.stringify(window.mdownerApp?.editor?.getJSON?.() || {}) : ""');
+      // 获取编辑器HTML内容并转换为Markdown
+      const htmlContent = await mainWindow.webContents.executeJavaScript('document.querySelector(".ProseMirror")?.innerHTML || ""');
+      const content = turndownService.turndown(htmlContent);
       await fsPromises.writeFile(currentFilePath, content, 'utf-8');
       isModified = false;
       safeSend('file-saved');
@@ -407,11 +361,62 @@ function updateTitle() {
 function registerIPCHandlers() {
   ipcMain.handle('get-content', async () => {
     if (!mainWindow || mainWindow.isDestroyed()) return '';
-    // 通过执行渲染进程的JS获取编辑器内容
+    // 通过执行渲染进程的JS获取编辑器HTML内容，然后转换为Markdown
     try {
-      return await mainWindow.webContents.executeJavaScript('document.getElementById("editor")?.innerText || ""');
+      const htmlContent = await mainWindow.webContents.executeJavaScript('document.querySelector(".ProseMirror")?.innerHTML || ""');
+      return turndownService.turndown(htmlContent);
     } catch {
       return '';
+    }
+  });
+
+  ipcMain.handle('get-draft-path', () => {
+    return path.join(app.getPath('userData'), 'draft.md');
+  });
+
+  ipcMain.handle('generate-pdf', async (event, pdfPath, htmlContent) => {
+    try {
+      const puppeteer = require('puppeteer-core');
+      
+      // 尝试查找Chrome可执行文件
+      const chromePaths = [
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        process.env.CHROME_PATH
+      ];
+      
+      let executablePath = null;
+      for (const chromePath of chromePaths) {
+        if (chromePath && fs.existsSync(chromePath)) {
+          executablePath = chromePath;
+          break;
+        }
+      }
+      
+      if (!executablePath) {
+        throw new Error('未找到Chrome浏览器，请安装Chrome或设置CHROME_PATH环境变量');
+      }
+      
+      const browser = await puppeteer.launch({
+        executablePath: executablePath,
+        headless: true
+      });
+      
+      const page = await browser.newPage();
+      await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+      
+      await page.pdf({
+        path: pdfPath,
+        format: 'A4',
+        margin: { top: '1cm', right: '1cm', bottom: '1cm', left: '1cm' }
+      });
+      
+      await browser.close();
+      
+      return { success: true };
+    } catch (error) {
+      console.error('PDF generation failed:', error);
+      return { success: false, error: error.message };
     }
   });
 
@@ -450,6 +455,13 @@ function registerIPCHandlers() {
     updateTitle();
   });
 
+  ipcMain.on('dropped-files', async (_, filePaths) => {
+    if (filePaths && filePaths.length > 0) {
+      // 打开第一个拖拽的文件
+      await openFile(filePaths[0]);
+    }
+  });
+
   ipcMain.on('save-file-and-close', async (_, filePath) => {
     try {
       const content = await fsPromises.readFile(filePath, 'utf-8');
@@ -480,15 +492,6 @@ function safeSend(channel, ...args) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(channel, ...args);
   }
-}
-
-// 带超时的 invoke
-async function invokeWithTimeout(webContents, channel, timeoutMs) {
-  console.log('=== invokeWithTimeout webContents:', Object.prototype.toString.call(webContents), Object.getPrototypeOf(webContents).constructor.name, 'channel:', channel);
-  return Promise.race([
-    webContents.invoke(channel),
-    new Promise((_, reject) => setTimeout(() => reject(new Error('invoke timeout')), timeoutMs))
-  ]);
 }
 
 // 应用就绪

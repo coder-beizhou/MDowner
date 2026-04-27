@@ -57,7 +57,10 @@ class MDownerApp {
     
     // 绑定IPC事件
     this.bindIPCEvents();
-    
+
+    // 初始化表格覆盖层
+    this.initTableOverlay();
+
     // 初始化拖拽
     this.initDragDrop();
     
@@ -174,12 +177,14 @@ class MDownerApp {
         
         onUpdate: ({ editor }) => {
           this.onContentChange();
-          this.updateOutline();
+          this.scheduleOutlineUpdate();
           this.updateStatusBar();
+          this.updateTableControls();
         },
         
         onSelectionUpdate: ({ editor }) => {
           this.updateToolbarState();
+          this.updateTableControls();
         },
         
         onFocus: () => {
@@ -231,10 +236,6 @@ class MDownerApp {
     this.bindToolbarButton('btn-quote', () => this.toggleBlockquote());
     this.bindToolbarButton('btn-codeblock', () => this.toggleCodeBlock());
     this.bindToolbarButton('btn-table', () => this.insertTable());
-    this.bindToolbarButton('btn-add-row', () => this.addTableRow());
-    this.bindToolbarButton('btn-delete-row', () => this.deleteTableRow());
-    this.bindToolbarButton('btn-add-col', () => this.addTableCol());
-    this.bindToolbarButton('btn-delete-col', () => this.deleteTableCol());
     this.bindToolbarButton('btn-link', () => this.insertLink());
     this.bindToolbarButton('btn-image', () => this.insertImage());
     
@@ -367,7 +368,175 @@ class MDownerApp {
     if (!this.editor || !this.isEditorReady) return;
     this.editor.chain().focus().deleteColumn().run();
   }
-  
+
+  // 初始化表格覆盖层
+  initTableOverlay() {
+    const container = document.getElementById('editor-container');
+    if (!container) return;
+
+    // 确保 container 是定位参考
+    const containerPos = getComputedStyle(container).position;
+    if (containerPos === 'static') {
+      container.style.position = 'relative';
+    }
+
+    // 创建覆盖层
+    this._tableOverlay = document.createElement('div');
+    this._tableOverlay.id = 'table-overlay';
+    this._tableOverlay.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10;';
+    container.appendChild(this._tableOverlay);
+
+    // 滚动时更新控件位置
+    container.addEventListener('scroll', () => {
+      this.updateTableControls();
+    }, { passive: true });
+  }
+
+  // 更新表格内联控件（覆盖层方式，不修改 ProseMirror DOM）
+  updateTableControls() {
+    if (!this._tableOverlay) return;
+
+    const editorEl = document.getElementById('editor');
+    const container = document.getElementById('editor-container');
+    if (!editorEl || !container) return;
+
+    const wrappers = editorEl.querySelectorAll('.tableWrapper');
+
+    // 没有表格就清空控件
+    if (wrappers.length === 0) {
+      if (this._tableOverlay.children.length > 0) {
+        this._tableOverlay.innerHTML = '';
+      }
+      return;
+    }
+
+    const containerRect = container.getBoundingClientRect();
+    let html = '';
+
+    wrappers.forEach((wrapper, tableIdx) => {
+      const tableEl = wrapper.querySelector('table');
+      if (!tableEl) return;
+
+      const tableRect = tableEl.getBoundingClientRect();
+      const top = tableRect.top - containerRect.top + container.scrollTop;
+      const left = tableRect.left - containerRect.left + container.scrollLeft;
+
+      // 左上角删除表格按钮
+      html += `<button class="table-ctrl-btn table-ctrl-del-table"
+        style="top:${top - 24}px;left:${left - 24}px"
+        data-action="delTable" data-table="${tableIdx}">×</button>`;
+
+      // 底部添加行按钮
+      const addRowTop = top + tableRect.height + 4;
+      const addRowLeft = left + tableRect.width / 2 - 10;
+      html += `<button class="table-ctrl-btn table-ctrl-add-row"
+        style="top:${addRowTop}px;left:${addRowLeft}px"
+        data-action="addRow" data-table="${tableIdx}">+</button>`;
+
+      // 右侧添加列按钮
+      const addColTop = top + tableRect.height / 2 - 10;
+      const addColLeft = left + tableRect.width + 4;
+      html += `<button class="table-ctrl-btn table-ctrl-add-col"
+        style="top:${addColTop}px;left:${addColLeft}px"
+        data-action="addCol" data-table="${tableIdx}">+</button>`;
+
+      // 为每一行创建删除按钮
+      const rows = tableEl.querySelectorAll('tr');
+      rows.forEach((tr, rowIdx) => {
+        const rowRect = tr.getBoundingClientRect();
+        const btnTop = rowRect.top - containerRect.top + container.scrollTop + rowRect.height / 2 - 8;
+        const btnLeft = left - 24;
+        html += `<button class="table-ctrl-btn table-ctrl-del-row"
+          style="top:${btnTop}px;left:${btnLeft}px"
+          data-action="delRow" data-table="${tableIdx}" data-row="${rowIdx}">−</button>`;
+      });
+
+      // 为第一行的每个单元格顶部创建列删除按钮（不限于 th，删掉表头后 td 也能用）
+      const firstRow = tableEl.querySelector('tr');
+      if (firstRow) {
+        const firstRowCells = firstRow.querySelectorAll('td, th');
+        firstRowCells.forEach((cell, colIdx) => {
+          const cellRect = cell.getBoundingClientRect();
+          const btnTop = top - 24;
+          const btnLeft = cellRect.left - containerRect.left + container.scrollLeft + cellRect.width / 2 - 8;
+          html += `<button class="table-ctrl-btn table-ctrl-del-col"
+            style="top:${btnTop}px;left:${btnLeft}px"
+            data-action="delCol" data-table="${tableIdx}" data-col="${colIdx}">−</button>`;
+        });
+      }
+    });
+
+    this._tableOverlay.innerHTML = html;
+
+    // 为按钮绑定事件
+    this._tableOverlay.querySelectorAll('.table-ctrl-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const action = btn.dataset.action;
+        const tableIdx = parseInt(btn.dataset.table);
+        const wrapperEl = wrappers[tableIdx];
+        const tableEl = wrapperEl ? wrapperEl.querySelector('table') : null;
+
+        if (action === 'addRow') {
+          this.focusLastCell(tableEl);
+          this.addTableRow();
+        } else if (action === 'addCol') {
+          this.focusLastCell(tableEl);
+          this.addTableCol();
+        } else if (action === 'delRow') {
+          const rowIdx = parseInt(btn.dataset.row);
+          const rowEl = tableEl ? tableEl.querySelectorAll('tr')[rowIdx] : null;
+          if (rowEl) this.focusAndDeleteRow(rowEl);
+        } else if (action === 'delCol') {
+          const colIdx = parseInt(btn.dataset.col);
+          const firstRow = tableEl ? tableEl.querySelector('tr') : null;
+          const cellEl = firstRow ? firstRow.querySelectorAll('td, th')[colIdx] : null;
+          if (cellEl) this.focusAndDeleteCol(cellEl);
+        } else if (action === 'delTable') {
+          this.deleteTableAt(tableEl);
+        }
+      });
+    });
+  }
+
+  // 删除整个表格
+  deleteTableAt(tableEl) {
+    if (!this.editor || !this.isEditorReady || !tableEl) return;
+    const cell = tableEl.querySelector('td, th');
+    if (cell) {
+      const pos = this.editor.view.posAtDOM(cell, 0);
+      this.editor.chain().setTextSelection(pos).deleteTable().run();
+    }
+  }
+
+  // 聚焦到表格最后一个单元格
+  focusLastCell(tableEl) {
+    if (!this.editor || !this.isEditorReady || !tableEl) return;
+    const cells = tableEl.querySelectorAll('td, th');
+    const lastCell = cells[cells.length - 1];
+    if (lastCell) {
+      const pos = this.editor.view.posAtDOM(lastCell, 0);
+      this.editor.chain().setTextSelection(pos).run();
+    }
+  }
+
+  // 聚焦并删除行
+  focusAndDeleteRow(rowEl) {
+    if (!this.editor || !this.isEditorReady) return;
+    const cell = rowEl.querySelector('td, th');
+    if (cell) {
+      const pos = this.editor.view.posAtDOM(cell, 0);
+      this.editor.chain().setTextSelection(pos).deleteRow().run();
+    }
+  }
+
+  // 聚焦并删除列
+  focusAndDeleteCol(cellEl) {
+    if (!this.editor || !this.isEditorReady) return;
+    const pos = this.editor.view.posAtDOM(cellEl, 0);
+    this.editor.chain().setTextSelection(pos).deleteColumn().run();
+  }
+
   // 插入链接
   insertLink() {
     if (!this.editor || !this.isEditorReady) return;
@@ -547,6 +716,16 @@ class MDownerApp {
     }
   }
   
+  // 节流更新大纲（每帧最多一次）
+  scheduleOutlineUpdate() {
+    if (this._outlinePending) return;
+    this._outlinePending = true;
+    requestAnimationFrame(() => {
+      this._outlinePending = false;
+      this.updateOutline();
+    });
+  }
+
   // 更新大纲
   updateOutline() {
     if (!this.editor || !this.isEditorReady) return;
@@ -641,6 +820,7 @@ class MDownerApp {
   
   // 内容变化处理
   onContentChange() {
+    if (this._suppressContentChange) return;
     if (!this.isModified) {
       this.isModified = true;
       this.updateStatusBar();
@@ -669,8 +849,14 @@ class MDownerApp {
   // 保存草稿
   async saveDraft() {
     if (!this.editor || !this.isEditorReady) return;
-    const content = this.editor.getHTML();
-    // 这里可以实现草稿保存逻辑
+    if (!window.electronAPI) return;
+    try {
+      const html = this.editor.getHTML();
+      const draftPath = await window.electronAPI.getDraftPath();
+      await window.electronAPI.writeFile(draftPath, html);
+    } catch (error) {
+      console.error('Failed to save draft:', error);
+    }
   }
   
   // 绑定IPC事件
@@ -738,12 +924,14 @@ class MDownerApp {
       console.warn('Editor not ready for newFile');
       return;
     }
-    
+
+    this._suppressContentChange = true;
     this.editor.commands.clearContent();
     this.currentFile = null;
     this.isModified = false;
     this.updateStatusBar();
     this.updateOutline();
+    this._suppressContentChange = false;
     console.log('New file created');
   }
   
@@ -751,38 +939,46 @@ class MDownerApp {
   openFile(path, content) {
     console.log('Opening file:', path);
     console.log('Content length:', content ? content.length : 0);
-    
+
     if (!this.editor) {
       console.error('Editor not initialized');
       return;
     }
-    
+
     if (!this.isEditorReady) {
       console.log('Editor not ready, waiting...');
-      // 等待编辑器准备好
-      const checkReady = setInterval(() => {
+      if (this._pendingFileCheck) {
+        clearInterval(this._pendingFileCheck);
+        clearTimeout(this._pendingFileTimeout);
+      }
+      this._pendingFileCheck = setInterval(() => {
         if (this.isEditorReady) {
-          clearInterval(checkReady);
+          clearInterval(this._pendingFileCheck);
+          clearTimeout(this._pendingFileTimeout);
+          this._pendingFileCheck = null;
+          this._pendingFileTimeout = null;
           this.setFileContent(path, content);
         }
       }, 100);
-      
-      // 超时处理
-      setTimeout(() => {
-        clearInterval(checkReady);
+
+      this._pendingFileTimeout = setTimeout(() => {
+        clearInterval(this._pendingFileCheck);
+        this._pendingFileCheck = null;
+        this._pendingFileTimeout = null;
         if (!this.isEditorReady) {
           console.error('Editor ready timeout');
         }
       }, 5000);
-      
+
       return;
     }
-    
+
     this.setFileContent(path, content);
   }
   
   setFileContent(path, content) {
     try {
+      this._suppressContentChange = true;
       const trimmed = content?.trim();
       if (trimmed && trimmed.startsWith('{') && trimmed.includes('"type":"doc"')) {
         const json = JSON.parse(trimmed);
@@ -797,6 +993,8 @@ class MDownerApp {
       this.updateOutline();
     } catch (error) {
       console.error('Failed to set content:', error);
+    } finally {
+      this._suppressContentChange = false;
     }
   }
   
@@ -870,101 +1068,47 @@ class MDownerApp {
   }
   
   // 导出PDF
-  async exportPDF(path) {
+  async exportPDF(pdfPath) {
     if (!this.editor || !this.isEditorReady) {
       console.error('Editor not ready for export');
       return;
     }
-    
+
     try {
-      // 获取HTML内容
+      if (!window.electronAPI) return;
       const content = this.editor.getHTML();
-      
-      // 创建完整的HTML文档
-      const html = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="UTF-8">
-          <title>MDowner Export</title>
-          <style>
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-              line-height: 1.6;
-              max-width: 800px;
-              margin: 0 auto;
-              padding: 40px;
-              color: #333;
-            }
-            h1, h2, h3, h4, h5, h6 {
-              margin-top: 1.5em;
-              margin-bottom: 0.5em;
-            }
-            h1 { font-size: 2em; }
-            h2 { font-size: 1.5em; }
-            h3 { font-size: 1.25em; }
-            p { margin: 1em 0; }
-            code {
-              background: #f5f5f5;
-              padding: 0.2em 0.4em;
-              border-radius: 4px;
-              font-family: 'Consolas', 'Monaco', monospace;
-            }
-            pre {
-              background: #f5f5f5;
-              padding: 1em;
-              border-radius: 6px;
-              overflow-x: auto;
-            }
-            pre code {
-              background: none;
-              padding: 0;
-            }
-            blockquote {
-              border-left: 4px solid #ddd;
-              margin: 1em 0;
-              padding-left: 1em;
-              color: #666;
-            }
-            table {
-              border-collapse: collapse;
-              width: 100%;
-              margin: 1em 0;
-            }
-            th, td {
-              border: 1px solid #ddd;
-              padding: 0.5em 0.75em;
-              text-align: left;
-            }
-            th {
-              background: #f5f5f5;
-              font-weight: 600;
-            }
-            img {
-              max-width: 100%;
-              height: auto;
-            }
-            ul, ol {
-              padding-left: 1.5em;
-            }
-            li {
-              margin: 0.25em 0;
-            }
-          </style>
-        </head>
-        <body>
-          ${content}
-        </body>
-        </html>
-      `;
-      
-      // 写入临时HTML文件
-      const tempPath = path.replace('.pdf', '.html');
-      if (window.electronAPI) {
-        await window.electronAPI.writeFile(tempPath, html);
-        alert('PDF导出功能需要进一步实现。HTML文件已保存到: ' + tempPath);
+
+      const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>MDowner Export</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 40px; color: #333; }
+    h1, h2, h3, h4, h5, h6 { margin-top: 1.5em; margin-bottom: 0.5em; }
+    h1 { font-size: 2em; } h2 { font-size: 1.5em; } h3 { font-size: 1.25em; }
+    p { margin: 1em 0; }
+    code { background: #f5f5f5; padding: 0.2em 0.4em; border-radius: 4px; font-family: monospace; }
+    pre { background: #f5f5f5; padding: 1em; border-radius: 6px; overflow-x: auto; }
+    pre code { background: none; padding: 0; }
+    blockquote { border-left: 4px solid #ddd; margin: 1em 0; padding-left: 1em; color: #666; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 0.5em 0.75em; text-align: left; }
+    th { background: #f5f5f5; font-weight: 600; }
+    img { max-width: 100%; height: auto; }
+    ul, ol { padding-left: 1.5em; }
+    li { margin: 0.25em 0; }
+  </style>
+</head>
+<body>${content}</body>
+</html>`;
+
+      const result = await window.electronAPI.generatePDF(pdfPath, html);
+      if (result.success) {
+        alert('PDF导出成功');
+      } else {
+        alert('导出PDF失败: ' + result.error);
       }
-      
     } catch (error) {
       console.error('Failed to export PDF:', error);
       alert('导出PDF失败: ' + error.message);

@@ -53,6 +53,11 @@
   background-color: rgba(77, 166, 255, 0.2);
 }
 
+/* 深色主题下表格控件的 "+" 按钮保持可用变量 */
+[data-theme="dark"] .table-ctrl-btn {
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
 /* 深色主题下的图片选中 */
 [data-theme="dark"] .ProseMirror img.ProseMirror-selectednode {
   outline-color: var(--accent-color);
