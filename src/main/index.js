@@ -35,6 +35,19 @@ let mainWindow;
 let currentFilePath = null;
 let isModified = false;
 
+// 从命令行参数中提取文件路径
+function getFileFromArgv(argv) {
+  for (let i = argv.length - 1; i >= 0; i--) {
+    const arg = argv[i];
+    if (arg.startsWith('-')) continue;
+    if (arg === process.execPath) continue;
+    if (arg.endsWith('.md') || arg.endsWith('.markdown') || arg.endsWith('.txt')) {
+      return arg;
+    }
+  }
+  return null;
+}
+
 // 加载配置
 async function loadConfig() {
   console.log('=== loadConfig called');
@@ -82,9 +95,15 @@ async function createWindow() {
   // 窗口准备好后显示
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
-    
+
     // 发送配置到渲染进程
     mainWindow.webContents.send('config-loaded', config);
+
+    // 处理双击 .md 文件打开的启动参数
+    const startupFile = getFileFromArgv(process.argv);
+    if (startupFile) {
+      openFile(startupFile);
+    }
   });
 
   // 窗口关闭前检查
