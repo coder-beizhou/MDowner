@@ -43,10 +43,10 @@
       "signAndEditExecutable": false
     },
     "portable": {
-      "artifactName": "MDowner-Portable.exe"
+      "artifactName": "${productName}_Portable_${version}.exe"
     },
     "nsis": {
-      "artifactName": "MDowner-Setup.exe",
+      "artifactName": "${productName}_Setup_${version}.exe",
       "installerIcon": "assets/icons/icon.ico",
       "installerHeaderIcon": "assets/icons/icon.ico",
       "uninstallerIcon": "assets/icons/icon.ico",
