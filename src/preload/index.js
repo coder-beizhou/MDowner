@@ -2,6 +2,10 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 // 暴露API给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
+  // 系统
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  showContextMenu: () => ipcRenderer.invoke('show-context-menu'),
+
   // 文件操作
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
   saveFileDialog: (options) => ipcRenderer.invoke('save-file-dialog', options),

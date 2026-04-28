@@ -63,7 +63,10 @@ class MDownerApp {
 
     // 初始化拖拽
     this.initDragDrop();
-    
+
+    // 初始化右键菜单与Ctrl+右键链接打开
+    this.initContextMenu();
+
     // 应用主题
     this.applyTheme(this.config.theme);
     
@@ -781,15 +784,101 @@ class MDownerApp {
       e.preventDefault();
       e.stopPropagation();
     });
-    
+
     document.addEventListener("drop", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      
+
       const files = Array.from(e.dataTransfer.files);
       if (files.length > 0) {
         const paths = files.map(f => f.path);
         window.electronAPI.sendDroppedFiles(paths);
+      }
+    });
+  }
+
+  initContextMenu() {
+    const editorEl = document.getElementById('editor');
+    if (!editorEl || !window.electronAPI) return;
+
+    // 辅助：判断是否在 http/https 链接上
+    const findLink = (target) => {
+      const link = target.closest('a');
+      if (link && link.href && /^https?:\/\//i.test(link.href)) {
+        return link.href;
+      }
+      return null;
+    };
+
+    // Ctrl+左键点击链接 — 用捕获阶段拦截，阻止 ProseMirror 处理
+    editorEl.addEventListener('mousedown', (e) => {
+      if (e.button === 0 && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
+        if (findLink(e.target)) {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+        }
+      }
+    }, true);
+
+    editorEl.addEventListener('click', (e) => {
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
+        const url = findLink(e.target);
+        if (url) {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          window.electronAPI.openExternal(url);
+        }
+      }
+    }, true);
+
+    // 右键处理
+    editorEl.addEventListener('mousedown', (e) => {
+      if (e.button === 2 && e.ctrlKey && findLink(e.target)) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+      }
+    }, true);
+
+    editorEl.addEventListener('contextmenu', async (e) => {
+      // Ctrl+右键点击链接 → 浏览器打开
+      if (e.ctrlKey) {
+        const url = findLink(e.target);
+        if (url) {
+          e.preventDefault();
+          e.stopPropagation();
+          await window.electronAPI.openExternal(url);
+        }
+        return;
+      }
+
+      // 普通右键 → 上下文菜单
+      e.preventDefault();
+      e.stopPropagation();
+      const action = await window.electronAPI.showContextMenu();
+      if (!action || !this.editor) return;
+
+      switch (action) {
+        case 'undo':
+          this.editor.chain().focus().undo().run();
+          break;
+        case 'redo':
+          this.editor.chain().focus().redo().run();
+          break;
+        case 'cut':
+          document.execCommand('cut');
+          break;
+        case 'copy':
+          document.execCommand('copy');
+          break;
+        case 'paste':
+          document.execCommand('paste');
+          break;
+        case 'selectAll':
+          this.editor.chain().focus().selectAll().run();
+          break;
       }
     });
   }

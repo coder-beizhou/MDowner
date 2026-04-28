@@ -48,7 +48,6 @@ html, body {
 /* 选中文本样式 */
 ::selection {
   background-color: var(--accent-color);
-  color: white;
 }
 
 /* 焦点样式 */

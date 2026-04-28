@@ -440,6 +440,34 @@ function registerIPCHandlers() {
     }
   });
 
+  // 用浏览器打开外部链接
+  ipcMain.handle('open-external', async (_, url) => {
+    try {
+      await shell.openExternal(url);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 右键上下文菜单
+  ipcMain.handle('show-context-menu', async () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return null;
+    return new Promise(resolve => {
+      const menu = Menu.buildFromTemplate([
+        { label: '撤销', accelerator: 'CmdOrCtrl+Z', click: () => resolve('undo') },
+        { label: '重做', accelerator: 'CmdOrCtrl+Y', click: () => resolve('redo') },
+        { type: 'separator' },
+        { label: '剪切', accelerator: 'CmdOrCtrl+X', click: () => resolve('cut') },
+        { label: '复制', accelerator: 'CmdOrCtrl+C', click: () => resolve('copy') },
+        { label: '粘贴', accelerator: 'CmdOrCtrl+V', click: () => resolve('paste') },
+        { type: 'separator' },
+        { label: '全选', accelerator: 'CmdOrCtrl+A', click: () => resolve('selectAll') }
+      ]);
+      menu.popup({ window: mainWindow, callback: () => resolve(null) });
+    });
+  });
+
   ipcMain.handle('open-file-dialog', async () => {
     return await openFileDialog();
   });

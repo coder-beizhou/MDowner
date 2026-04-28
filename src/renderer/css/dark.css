@@ -40,7 +40,7 @@
 
 /* 深色主题下的选中文本 */
 [data-theme="dark"] ::selection {
-  background-color: rgba(77, 166, 255, 0.3);
+  background-color: #264f78;
 }
 
 /* 深色主题下的表格选中单元格 */
