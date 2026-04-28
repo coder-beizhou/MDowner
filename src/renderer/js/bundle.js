@@ -24739,6 +24739,121 @@ ${content}</tr>
     }
   });
 
+  // src/renderer/js/modal.js
+  var Modal;
+  var init_modal = __esm({
+    "src/renderer/js/modal.js"() {
+      Modal = class {
+        constructor(options2 = {}) {
+          this.options = { title: "\u5BF9\u8BDD\u6846", width: 460, ...options2 };
+          this.overlay = null;
+          this._resolve = null;
+          this._keyHandler = null;
+          this.onAfterRender = options2.onAfterRender || null;
+        }
+        setBodyHTML(html2) {
+          this._bodyHTML = html2;
+        }
+        show() {
+          return new Promise((resolve) => {
+            this._resolve = resolve;
+            this._render();
+            this._bindEvents();
+            this._focusFirstInput();
+            if (this.onAfterRender) {
+              this.onAfterRender();
+            }
+          });
+        }
+        close() {
+          if (this._resolve) {
+            this._resolve(null);
+            this._cleanup();
+          }
+        }
+        _render() {
+          this.overlay = document.createElement("div");
+          this.overlay.className = "modal-overlay";
+          this.overlay.innerHTML = `
+      <div class="modal-dialog" style="width:${this.options.width}px">
+        <div class="modal-header">
+          <span class="modal-title">${this._escapeHTML(this.options.title)}</span>
+          <button class="modal-close" data-action="cancel">&times;</button>
+        </div>
+        <div class="modal-body">${this._bodyHTML || ""}</div>
+        <div class="modal-footer">
+          <span class="modal-footer-spacer"></span>
+          <button class="modal-btn modal-btn-cancel" data-action="cancel">\u53D6\u6D88</button>
+          <button class="modal-btn modal-btn-confirm" data-action="confirm">\u786E\u8BA4</button>
+        </div>
+      </div>`;
+          document.body.appendChild(this.overlay);
+        }
+        _bindEvents() {
+          this.overlay.addEventListener("click", (e) => {
+            if (e.target === this.overlay) {
+              this._cancel();
+            }
+          });
+          this.overlay.addEventListener("click", (e) => {
+            const action = e.target.closest("[data-action]")?.dataset.action;
+            if (action === "confirm") {
+              this._submit();
+            } else if (action === "cancel") {
+              this._cancel();
+            }
+          });
+          this._keyHandler = (e) => {
+            if (e.key === "Escape") {
+              e.preventDefault();
+              this._cancel();
+            } else if (e.key === "Enter") {
+              const activeTag = document.activeElement?.tagName;
+              if (activeTag !== "TEXTAREA") {
+                e.preventDefault();
+                this._submit();
+              }
+            }
+          };
+          document.addEventListener("keydown", this._keyHandler);
+        }
+        _submit() {
+          const result = {};
+          const inputs = this.overlay.querySelectorAll("input[name], textarea[name]");
+          for (const input of inputs) {
+            result[input.name] = input.value;
+          }
+          this._resolve(result);
+          this._cleanup();
+        }
+        _cancel() {
+          this._resolve(null);
+          this._cleanup();
+        }
+        _cleanup() {
+          if (this._keyHandler) {
+            document.removeEventListener("keydown", this._keyHandler);
+            this._keyHandler = null;
+          }
+          if (this.overlay && this.overlay.parentNode) {
+            this.overlay.parentNode.removeChild(this.overlay);
+          }
+          this.overlay = null;
+          this._resolve = null;
+        }
+        _focusFirstInput() {
+          const first2 = this.overlay.querySelector("input[name], textarea[name]");
+          if (first2) {
+            setTimeout(() => first2.focus(), 100);
+          }
+        }
+        _escapeHTML(str) {
+          return String(str || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+      };
+    }
+  });
+
   // src/renderer/js/app.js
   var require_app = __commonJS({
     "src/renderer/js/app.js"() {
@@ -24755,6 +24870,7 @@ ${content}</tr>
       init_dist53();
       init_dist54();
       init_marked_esm();
+      init_modal();
       var MDownerApp = class {
         constructor() {
           this.editor = null;
@@ -24786,6 +24902,7 @@ ${content}</tr>
           this.initTableOverlay();
           this.initDragDrop();
           this.initContextMenu();
+          this.initImagePaste();
           this.applyTheme(this.config.theme);
           this.applyConfig();
           console.log("MDowner initialized successfully");
@@ -24929,6 +25046,7 @@ ${content}</tr>
           this.bindToolbarButton("btn-quote", () => this.toggleBlockquote());
           this.bindToolbarButton("btn-codeblock", () => this.toggleCodeBlock());
           this.bindToolbarButton("btn-table", () => this.insertTable());
+          this.bindToolbarButton("btn-hr", () => this.insertHr());
           this.bindToolbarButton("btn-link", () => this.insertLink());
           this.bindToolbarButton("btn-image", () => this.insertImage());
           this.bindToolbarButton("btn-undo", () => this.editor.chain().focus().undo().run());
@@ -25016,6 +25134,10 @@ ${content}</tr>
             cols: 3,
             withHeaderRow: true
           }).run();
+        }
+        insertHr() {
+          if (!this.editor || !this.isEditorReady) return;
+          this.editor.chain().focus().setHorizontalRule().run();
         }
         // 添加行
         addTableRow() {
@@ -25173,19 +25295,185 @@ ${content}</tr>
           this.editor.chain().setTextSelection(pos).deleteColumn().run();
         }
         // 插入链接
-        insertLink() {
+        _escapeHTML(str) {
+          return String(str || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+        _normalizeUrl(url) {
+          url = (url || "").trim();
+          if (!url) return "";
+          if (/^https?:\/\//i.test(url)) return url;
+          if (/^(mailto|ftp|tel):/i.test(url)) return url;
+          if (/^[./#]/.test(url)) return url;
+          return "https://" + url;
+        }
+        async insertLink() {
           if (!this.editor || !this.isEditorReady) return;
-          const url = prompt("\u8BF7\u8F93\u5165\u94FE\u63A5\u5730\u5740:");
-          if (url) {
-            this.editor.chain().focus().setLink({ href: url }).run();
+          const editor = this.editor;
+          const linkAttrs = editor.getAttributes("link");
+          const isEditing = !!(linkAttrs && linkAttrs.href);
+          const { empty: empty2, from: from2, to } = editor.state.selection;
+          let existingText = "";
+          let existingFrom, existingTo;
+          if (isEditing) {
+            editor.chain().focus().extendMarkRange("link").run();
+            existingFrom = editor.state.selection.from;
+            existingTo = editor.state.selection.to;
+            existingText = editor.state.doc.textBetween(existingFrom, existingTo, " ");
+          }
+          const hasSelection2 = !empty2 && !isEditing;
+          const selectedText = hasSelection2 ? editor.state.doc.textBetween(from2, to, " ") : "";
+          const modal = new Modal({
+            title: isEditing ? "\u7F16\u8F91\u94FE\u63A5" : "\u63D2\u5165\u94FE\u63A5",
+            width: 460
+          });
+          let bodyHTML = "";
+          if (isEditing || !hasSelection2 && empty2) {
+            bodyHTML += `
+        <div class="modal-field">
+          <label>\u94FE\u63A5\u6587\u672C</label>
+          <input type="text" name="linkText" value="${this._escapeHTML(isEditing ? existingText : "")}" placeholder="\u94FE\u63A5\u663E\u793A\u6587\u672C">
+        </div>`;
+          }
+          bodyHTML += `
+      <div class="modal-field">
+        <label>\u94FE\u63A5\u5730\u5740</label>
+        <input type="text" name="linkUrl" value="${this._escapeHTML(isEditing ? linkAttrs.href : "")}" placeholder="https://example.com">
+      </div>
+      <div class="modal-hint">\u6309 Enter \u786E\u8BA4\uFF0CEsc \u53D6\u6D88</div>`;
+          modal.setBodyHTML(bodyHTML);
+          if (isEditing) {
+            modal._hasDangerBtn = true;
+            modal._originalRender = modal._render;
+            modal._render = function() {
+              this._originalRender();
+              const footer = this.overlay.querySelector(".modal-footer");
+              const spacer = footer.querySelector(".modal-footer-spacer");
+              const dangerBtn = document.createElement("button");
+              dangerBtn.className = "modal-btn modal-btn-danger";
+              dangerBtn.textContent = "\u53D6\u6D88\u94FE\u63A5";
+              dangerBtn.addEventListener("click", () => {
+                editor.chain().focus().setTextSelection(existingFrom, existingTo).unsetLink().run();
+                this._resolve({ _unlinked: true });
+                this._cleanup();
+              });
+              footer.insertBefore(dangerBtn, spacer);
+            };
+          }
+          const result = await modal.show();
+          if (!result || result._unlinked) return;
+          const url = this._normalizeUrl(result.linkUrl);
+          if (!url) return;
+          const newText = (result.linkText || "").trim();
+          if (isEditing) {
+            if (newText && newText !== existingText) {
+              const start = existingFrom;
+              editor.chain().focus().setTextSelection(start, existingTo).insertContent(newText).setTextSelection(start, start + newText.length).setLink({ href: url }).setTextSelection(start + newText.length).run();
+            } else {
+              editor.chain().focus().setTextSelection(existingFrom, existingTo).setLink({ href: url }).setTextSelection(existingTo).run();
+            }
+          } else if (hasSelection2) {
+            editor.chain().focus().setLink({ href: url }).run();
+          } else {
+            const linkText = newText || url;
+            const pos = editor.state.selection.from;
+            editor.chain().focus().insertContent(linkText).setTextSelection(pos, pos + linkText.length).setLink({ href: url }).setTextSelection(pos + linkText.length).run();
           }
         }
         // 插入图片
-        insertImage() {
+        async insertImage() {
           if (!this.editor || !this.isEditorReady) return;
-          const url = prompt("\u8BF7\u8F93\u5165\u56FE\u7247\u5730\u5740:");
-          if (url) {
-            this.editor.chain().focus().setImage({ src: url }).run();
+          let selectedFilePath = null;
+          let selectedFileDataUrl = null;
+          let activeTab = "local";
+          const modal = new Modal({
+            title: "\u63D2\u5165\u56FE\u7247",
+            width: 480
+          });
+          const hasDoc = !!(window.electronAPI && this.currentFile);
+          modal.setBodyHTML(`
+      <div class="modal-tabs">
+        <button type="button" class="modal-tab active" data-tab="local">\u672C\u5730\u6587\u4EF6</button>
+        <button type="button" class="modal-tab" data-tab="url">\u7F51\u7EDC\u5730\u5740</button>
+      </div>
+      <div class="modal-tab-content" id="tab-local">
+        ${!hasDoc ? '<div class="modal-warning">\u6587\u6863\u5C1A\u672A\u4FDD\u5B58\uFF0C\u56FE\u7247\u5C06\u6682\u5B58\u5230\u4E34\u65F6\u4F4D\u7F6E\uFF0C\u5EFA\u8BAE\u5148\u4FDD\u5B58\u6587\u6863 (Ctrl+S)\u3002</div>' : ""}
+        <button type="button" class="modal-btn-file" id="btn-pick-image">
+          <svg viewBox="0 0 24 24" width="32" height="32" style="color:var(--text-muted);margin-bottom:8px"><path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-5-7l-3 3.72L9 13l-3 4h12l-4-5z"/></svg>
+          <div style="font-size:14px;font-weight:500">\u9009\u62E9\u56FE\u7247\u6587\u4EF6</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:4px">\u652F\u6301 PNG\u3001JPG\u3001GIF\u3001WebP\u3001SVG\u3001BMP</div>
+        </button>
+        <div class="modal-preview" id="image-preview" style="display:none">
+          <img id="preview-img" src="" alt="">
+          <div class="modal-preview-name" id="preview-name"></div>
+          <button class="modal-preview-clear" id="preview-clear">\u6E05\u9664\u91CD\u65B0\u9009\u62E9</button>
+        </div>
+        <input type="hidden" name="imageSrc" value="">
+      </div>
+      <div class="modal-tab-content hidden" id="tab-url">
+        <div class="modal-field">
+          <label>\u56FE\u7247\u5730\u5740</label>
+          <input type="text" name="imageUrl" placeholder="https://example.com/image.png">
+        </div>
+        <div class="modal-hint">\u652F\u6301\u7F51\u7EDC\u56FE\u7247 URL\uFF0C\u56FE\u7247\u5C06\u76F4\u63A5\u5F15\u7528\u8FDC\u7A0B\u5730\u5740</div>
+      </div>
+      <div class="modal-hint" style="margin-top:12px">\u6309 Enter \u786E\u8BA4\uFF0CEsc \u53D6\u6D88</div>
+    `);
+          modal.onAfterRender = () => {
+            const overlay = modal.overlay;
+            overlay.querySelectorAll(".modal-tab").forEach((tab) => {
+              tab.addEventListener("click", () => {
+                overlay.querySelectorAll(".modal-tab").forEach((t) => t.classList.remove("active"));
+                tab.classList.add("active");
+                activeTab = tab.dataset.tab;
+                overlay.querySelector("#tab-local").classList.toggle("hidden", activeTab !== "local");
+                overlay.querySelector("#tab-url").classList.toggle("hidden", activeTab !== "url");
+              });
+            });
+            const pickBtn = overlay.querySelector("#btn-pick-image");
+            pickBtn.addEventListener("click", async () => {
+              if (!window.electronAPI) return;
+              const r = await window.electronAPI.openImageDialog();
+              if (r && !r.canceled && r.filePaths.length > 0) {
+                selectedFilePath = r.filePaths[0];
+                overlay.querySelector('input[name="imageSrc"]').value = selectedFilePath;
+                try {
+                  const base64 = await window.electronAPI.readBinaryFile(selectedFilePath);
+                  const ext = selectedFilePath.split(".").pop().toLowerCase();
+                  const mimeMap = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", svg: "image/svg+xml", bmp: "image/bmp" };
+                  selectedFileDataUrl = `data:${mimeMap[ext] || "image/png"};base64,${base64}`;
+                  overlay.querySelector("#image-preview").style.display = "block";
+                  overlay.querySelector("#preview-img").src = selectedFileDataUrl;
+                  overlay.querySelector("#preview-name").textContent = selectedFilePath.split(/[\\/]/).pop();
+                  pickBtn.style.display = "none";
+                } catch (err) {
+                  console.error("Preview failed:", err);
+                }
+              }
+            });
+            overlay.querySelector("#preview-clear").addEventListener("click", () => {
+              selectedFilePath = null;
+              selectedFileDataUrl = null;
+              overlay.querySelector('input[name="imageSrc"]').value = "";
+              overlay.querySelector("#image-preview").style.display = "none";
+              pickBtn.style.display = "";
+            });
+          };
+          const result = await modal.show();
+          if (!result) return;
+          const tabLocal = activeTab === "local";
+          let src;
+          if (tabLocal && selectedFilePath) {
+            if (window.electronAPI) {
+              const r = await window.electronAPI.copyImageToAssets(selectedFilePath, this.currentFile);
+              src = r.success ? `file:///${r.absolutePath.replace(/\\/g, "/")}` : `file:///${selectedFilePath.replace(/\\/g, "/")}`;
+            } else {
+              src = `file:///${selectedFilePath.replace(/\\/g, "/")}`;
+            }
+          } else if (!tabLocal && result.imageUrl) {
+            src = this._normalizeUrl(result.imageUrl);
+          }
+          if (src) {
+            this.editor.chain().focus().setImage({ src }).run();
           }
         }
         // 更新工具栏状态
@@ -25274,6 +25562,11 @@ ${content}</tr>
               this.insertTable();
               return;
             }
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "H") {
+              e.preventDefault();
+              this.insertHr();
+              return;
+            }
             if ((e.ctrlKey || e.metaKey) && e.key === "k") {
               e.preventDefault();
               this.insertLink();
@@ -25353,6 +25646,45 @@ ${content}</tr>
             });
           });
         }
+        initImagePaste() {
+          const editorEl = document.getElementById("editor");
+          if (!editorEl) return;
+          editorEl.addEventListener("paste", (e) => {
+            if (!this.editor || !this.isEditorReady) return;
+            const items = e.clipboardData?.items;
+            if (!items) return;
+            for (const item of items) {
+              if (item.type.startsWith("image/")) {
+                e.preventDefault();
+                e.stopPropagation();
+                this._handlePastedImage(item.getAsFile());
+                return;
+              }
+            }
+          });
+        }
+        async _handlePastedImage(blob) {
+          if (!blob) return;
+          if (!window.electronAPI) {
+            const reader = new FileReader();
+            reader.onload = () => {
+              this.editor.chain().focus().setImage({ src: reader.result }).run();
+            };
+            reader.readAsDataURL(blob);
+            return;
+          }
+          const dataUrl = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.readAsDataURL(blob);
+          });
+          const result = await window.electronAPI.saveImageDataUrl(dataUrl, this.currentFile, blob.type);
+          if (result?.success) {
+            this.editor.chain().focus().setImage({ src: `file:///${result.absolutePath.replace(/\\/g, "/")}` }).run();
+          } else {
+            this.editor.chain().focus().setImage({ src: dataUrl }).run();
+          }
+        }
         // 初始化拖拽文件
         initDragDrop() {
           document.addEventListener("dragover", (e) => {
@@ -25419,8 +25751,22 @@ ${content}</tr>
             e.preventDefault();
             e.stopPropagation();
             const hasSelection2 = this.editor && !this.editor.state.selection.empty;
-            const action = await window.electronAPI.showContextMenu(hasSelection2);
+            const linkUrl = findLink(e.target);
+            const action = await window.electronAPI.showContextMenu(hasSelection2, linkUrl);
             if (!action || !this.editor) return;
+            if (action === "open-link" && linkUrl) {
+              window.electronAPI.openExternal(linkUrl);
+              return;
+            }
+            if (action === "copy-link" && linkUrl) {
+              navigator.clipboard.writeText(linkUrl).catch(() => {
+              });
+              return;
+            }
+            if (action === "unlink") {
+              this.editor.chain().focus().extendMarkRange("link").unsetLink().run();
+              return;
+            }
             switch (action) {
               case "undo":
                 this.editor.chain().focus().undo().run();

@@ -1,0 +1,253 @@
+/* 弹窗遮罩 */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: modalFadeIn 0.2s ease;
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* 弹窗主体 */
+.modal-dialog {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  min-width: 400px;
+  max-width: 90vw;
+  animation: modalSlideUp 0.2s ease;
+}
+
+@keyframes modalSlideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* 头部 */
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 0;
+}
+
+.modal-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.modal-close {
+  font-size: 20px;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.modal-close:hover {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+
+/* 内容区 */
+.modal-body {
+  padding: 16px 20px;
+}
+
+/* 底部按钮区 */
+.modal-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 20px 16px;
+}
+
+.modal-footer-spacer {
+  flex: 1;
+}
+
+/* 按钮基础 */
+.modal-btn {
+  padding: 8px 20px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  border: none;
+  transition: opacity var(--transition-fast);
+}
+
+.modal-btn:hover {
+  opacity: 0.85;
+}
+
+/* 确认按钮 */
+.modal-btn-confirm {
+  background: var(--accent-color);
+  color: #fff;
+}
+
+/* 取消按钮 */
+.modal-btn-cancel {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.modal-btn-cancel:hover {
+  background: var(--bg-secondary);
+}
+
+/* 危险操作按钮（取消链接等） */
+.modal-btn-danger {
+  background: transparent;
+  color: #e04040;
+  border: 1px solid #e04040;
+}
+
+.modal-btn-danger:hover {
+  background: #e04040;
+  color: #fff;
+}
+
+/* 表单字段 */
+.modal-field {
+  margin-bottom: 12px;
+}
+
+.modal-field label {
+  display: block;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.modal-field input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.modal-field input:focus {
+  border-color: var(--accent-color);
+}
+
+/* 提示文字 */
+.modal-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
+/* 警告条 */
+.modal-warning {
+  background: rgba(255, 193, 7, 0.08);
+  border: 1px solid rgba(255, 193, 7, 0.25);
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+/* Tab 切换 */
+.modal-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 16px;
+}
+
+.modal-tab {
+  padding: 8px 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.modal-tab.active {
+  color: var(--accent-color);
+  border-bottom-color: var(--accent-color);
+}
+
+.modal-tab-content.hidden {
+  display: none;
+}
+
+/* 文件选择按钮 */
+.modal-btn-file {
+  width: 100%;
+  border: 2px dashed var(--border-color);
+  border-radius: 8px;
+  padding: 32px;
+  text-align: center;
+  color: var(--text-secondary);
+  cursor: pointer;
+  background: none;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.modal-btn-file:hover {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+
+/* 图片预览 */
+.modal-preview {
+  margin-top: 12px;
+}
+
+.modal-preview img {
+  max-width: 100%;
+  max-height: 200px;
+  border-radius: 4px;
+  display: block;
+  margin: 0 auto;
+}
+
+.modal-preview-name {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  text-align: center;
+  word-break: break-all;
+}
+
+.modal-preview-clear {
+  display: block;
+  margin: 8px auto 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.modal-preview-clear:hover {
+  color: #e04040;
+}

@@ -4,7 +4,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
   // 系统
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
-  showContextMenu: (hasSelection) => ipcRenderer.invoke('show-context-menu', hasSelection),
+  showContextMenu: (hasSelection, linkUrl) => ipcRenderer.invoke('show-context-menu', hasSelection, linkUrl),
 
   // 文件操作
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
@@ -51,7 +51,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('export-pdf', (event, path) => callback(path));
   },
   
-  // 事件发送
+  // 图片操作
+  openImageDialog: () => ipcRenderer.invoke('open-image-dialog'),
+  readBinaryFile: (filePath) => ipcRenderer.invoke('read-binary-file', filePath),
+  copyImageToAssets: (sourcePath, documentPath) => ipcRenderer.invoke('copy-image-to-assets', sourcePath, documentPath),
+  saveImageDataUrl: (dataUrl, documentPath, mimeType) => ipcRenderer.invoke('save-image-data-url', dataUrl, documentPath, mimeType),
+
+// 事件发送
   contentModified: () => ipcRenderer.send('content-modified'),
   contentSaved: () => ipcRenderer.send('content-saved'),
   selectionChanged: (hasSelection) => ipcRenderer.send('selection-changed', hasSelection),

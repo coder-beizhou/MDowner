@@ -454,10 +454,22 @@ function registerIPCHandlers() {
   });
 
   // 右键上下文菜单
-  ipcMain.handle('show-context-menu', async (_, hasSelection) => {
+  ipcMain.handle('show-context-menu', async (_, hasSelection, linkUrl) => {
     if (!mainWindow || mainWindow.isDestroyed()) return null;
     return new Promise(resolve => {
-      const menu = Menu.buildFromTemplate([
+      const template = [];
+
+      // 链接专属操作
+      if (linkUrl) {
+        template.push(
+          { label: '打开链接', click: () => resolve('open-link') },
+          { label: '复制链接地址', click: () => resolve('copy-link') },
+          { label: '取消链接', click: () => resolve('unlink') },
+          { type: 'separator' }
+        );
+      }
+
+      template.push(
         { label: '撤销', accelerator: 'CmdOrCtrl+Z', click: () => resolve('undo') },
         { label: '重做', accelerator: 'CmdOrCtrl+Y', click: () => resolve('redo') },
         { type: 'separator' },
@@ -466,7 +478,9 @@ function registerIPCHandlers() {
         { label: '粘贴', accelerator: 'CmdOrCtrl+V', click: () => resolve('paste') },
         { type: 'separator' },
         { label: '全选', accelerator: 'CmdOrCtrl+A', click: () => resolve('selectAll') }
-      ]);
+      );
+
+      const menu = Menu.buildFromTemplate(template);
       menu.popup({ window: mainWindow, callback: () => resolve(null) });
     });
   });
@@ -485,6 +499,78 @@ function registerIPCHandlers() {
 
   ipcMain.handle('write-file', async (_, filePath, content) => {
     await fsPromises.writeFile(filePath, content);
+  });
+
+  // 图片文件选择对话框
+  ipcMain.handle('open-image-dialog', async () => {
+    return await dialog.showOpenDialog(mainWindow, {
+      title: '选择图片文件',
+      properties: ['openFile'],
+      filters: [
+        { name: '图片文件', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'] },
+        { name: '所有文件', extensions: ['*'] }
+      ]
+    });
+  });
+
+  // 读取二进制文件返回 base64（预览用）
+  ipcMain.handle('read-binary-file', async (_, filePath) => {
+    const buffer = await fsPromises.readFile(filePath);
+    return buffer.toString('base64');
+  });
+
+  // 复制图片到文档 assets/ 目录
+  ipcMain.handle('copy-image-to-assets', async (_, sourcePath, documentPath) => {
+    const crypto = require('crypto');
+    const ext = path.extname(sourcePath);
+    const hash = crypto.createHash('md5').update(sourcePath + Date.now()).digest('hex').slice(0, 8);
+    const destName = `img_${hash}${ext}`;
+
+    let assetsDir, relativePath;
+    if (documentPath) {
+      assetsDir = path.join(path.dirname(documentPath), 'assets');
+      relativePath = `assets/${destName}`;
+    } else {
+      assetsDir = path.join(app.getPath('userData'), 'temp_images');
+      relativePath = path.join(assetsDir, destName);
+    }
+
+    if (!fs.existsSync(assetsDir)) {
+      fs.mkdirSync(assetsDir, { recursive: true });
+    }
+
+    const destPath = path.join(assetsDir, destName);
+    await fsPromises.copyFile(sourcePath, destPath);
+    return { success: true, relativePath, absolutePath: destPath };
+  });
+
+  // 保存 data URL 为图片文件（剪贴板粘贴用）
+  ipcMain.handle('save-image-data-url', async (_, dataUrl, documentPath, mimeType) => {
+    const crypto = require('crypto');
+    const matches = dataUrl.match(/^data:(.+);base64,(.+)$/);
+    if (!matches) return { success: false, error: 'Invalid data URL' };
+
+    const buffer = Buffer.from(matches[2], 'base64');
+    const ext = (mimeType || 'image/png').split('/').pop() || 'png';
+    const hash = crypto.createHash('md5').update(matches[2].slice(0, 100) + Date.now()).digest('hex').slice(0, 8);
+    const destName = `paste_${hash}.${ext}`;
+
+    let assetsDir, relativePath;
+    if (documentPath) {
+      assetsDir = path.join(path.dirname(documentPath), 'assets');
+      relativePath = `assets/${destName}`;
+    } else {
+      assetsDir = path.join(app.getPath('userData'), 'temp_images');
+      relativePath = path.join(assetsDir, destName);
+    }
+
+    if (!fs.existsSync(assetsDir)) {
+      fs.mkdirSync(assetsDir, { recursive: true });
+    }
+
+    const destPath = path.join(assetsDir, destName);
+    await fsPromises.writeFile(destPath, buffer);
+    return { success: true, relativePath, absolutePath: destPath };
   });
 
   ipcMain.handle('load-config', async () => {
