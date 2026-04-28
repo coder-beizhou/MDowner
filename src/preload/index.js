@@ -4,7 +4,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
   // 系统
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
-  showContextMenu: () => ipcRenderer.invoke('show-context-menu'),
+  showContextMenu: (hasSelection) => ipcRenderer.invoke('show-context-menu', hasSelection),
 
   // 文件操作
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
@@ -54,7 +54,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 事件发送
   contentModified: () => ipcRenderer.send('content-modified'),
   contentSaved: () => ipcRenderer.send('content-saved'),
+  selectionChanged: (hasSelection) => ipcRenderer.send('selection-changed', hasSelection),
   sendDroppedFiles: (paths) => ipcRenderer.send('dropped-files', paths),
+
+  // 菜单栏剪切/复制
+  onMenuCut: (callback) => {
+    ipcRenderer.removeAllListeners('menu-cut');
+    ipcRenderer.on('menu-cut', callback);
+  },
+  onMenuCopy: (callback) => {
+    ipcRenderer.removeAllListeners('menu-copy');
+    ipcRenderer.on('menu-copy', callback);
+  },
 
   // 关闭时保存
   onPrepareSave: (callback) => {

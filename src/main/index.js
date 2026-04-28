@@ -34,6 +34,9 @@ const DEFAULT_CONFIG = {
 let mainWindow;
 let currentFilePath = null;
 let isModified = false;
+let hasSelection = false;
+let cutMenuItem = null;
+let copyMenuItem = null;
 
 // 从命令行参数中提取文件路径
 function getFileFromArgv(argv) {
@@ -202,8 +205,8 @@ function createMenu() {
         { label: '撤销', accelerator: 'CmdOrCtrl+Z', role: 'undo' },
         { label: '重做', accelerator: 'CmdOrCtrl+Y', role: 'redo' },
         { type: 'separator' },
-        { label: '剪切', accelerator: 'CmdOrCtrl+X', role: 'cut' },
-        { label: '复制', accelerator: 'CmdOrCtrl+C', role: 'copy' },
+        cutMenuItem = { label: '剪切', accelerator: 'CmdOrCtrl+X', enabled: hasSelection, click: () => safeSend('menu-cut') },
+        copyMenuItem = { label: '复制', accelerator: 'CmdOrCtrl+C', enabled: hasSelection, click: () => safeSend('menu-copy') },
         { label: '粘贴', accelerator: 'CmdOrCtrl+V', role: 'paste' },
         { type: 'separator' },
         { label: '全选', accelerator: 'CmdOrCtrl+A', role: 'selectAll' }
@@ -451,15 +454,15 @@ function registerIPCHandlers() {
   });
 
   // 右键上下文菜单
-  ipcMain.handle('show-context-menu', async () => {
+  ipcMain.handle('show-context-menu', async (_, hasSelection) => {
     if (!mainWindow || mainWindow.isDestroyed()) return null;
     return new Promise(resolve => {
       const menu = Menu.buildFromTemplate([
         { label: '撤销', accelerator: 'CmdOrCtrl+Z', click: () => resolve('undo') },
         { label: '重做', accelerator: 'CmdOrCtrl+Y', click: () => resolve('redo') },
         { type: 'separator' },
-        { label: '剪切', accelerator: 'CmdOrCtrl+X', click: () => resolve('cut') },
-        { label: '复制', accelerator: 'CmdOrCtrl+C', click: () => resolve('copy') },
+        { label: '剪切', accelerator: 'CmdOrCtrl+X', enabled: hasSelection, click: () => resolve('cut') },
+        { label: '复制', accelerator: 'CmdOrCtrl+C', enabled: hasSelection, click: () => resolve('copy') },
         { label: '粘贴', accelerator: 'CmdOrCtrl+V', click: () => resolve('paste') },
         { type: 'separator' },
         { label: '全选', accelerator: 'CmdOrCtrl+A', click: () => resolve('selectAll') }
@@ -490,6 +493,12 @@ function registerIPCHandlers() {
 
   ipcMain.handle('save-config', async (_, config) => {
     await saveConfig(config);
+  });
+
+  ipcMain.on('selection-changed', (_, selected) => {
+    hasSelection = selected;
+    if (cutMenuItem) cutMenuItem.enabled = hasSelection;
+    if (copyMenuItem) copyMenuItem.enabled = hasSelection;
   });
 
   ipcMain.on('content-modified', () => {

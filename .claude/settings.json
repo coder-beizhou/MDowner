@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip show *)",
+      "Bash(python3 -c ' *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(gh release create v1.1.0 dist/MDowner-Portable.exe dist/MDowner-Setup.exe dist/MDowner-win-unpacked.zip --title 'v1.1.0 - 表格内联控件 + 多项修复' --notes ' *)",
+      "Bash(npx asar *)",
+      "Bash(pkill -f electron-builder)",
+      "PowerShell(Add-MpPreference -ExclusionPath \"C:\\\\Users\\\\83792\\\\Documents\\\\code\\\\MDowner\\\\dist\" -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Process | Where-Object { $_.ProcessName -match 'electron|MDowner|node' } | Select-Object Id, ProcessName, MainWindowTitle | Format-Table -AutoSize)",
+      "PowerShell(Stop-Process -Force)",
+      "Bash(gh release *)"
+    ]
+  }
+}

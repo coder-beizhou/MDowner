@@ -193,6 +193,10 @@ class MDownerApp {
         onSelectionUpdate: ({ editor }) => {
           this.updateToolbarState();
           this.updateTableControls();
+          // 同步选区状态到主进程（菜单栏剪切/复制启用/禁用）
+          if (window.electronAPI) {
+            window.electronAPI.selectionChanged(!editor.state.selection.empty);
+          }
         },
         
         onFocus: () => {
@@ -857,7 +861,8 @@ class MDownerApp {
       // 普通右键 → 上下文菜单
       e.preventDefault();
       e.stopPropagation();
-      const action = await window.electronAPI.showContextMenu();
+      const hasSelection = this.editor && !this.editor.state.selection.empty;
+      const action = await window.electronAPI.showContextMenu(hasSelection);
       if (!action || !this.editor) return;
 
       switch (action) {
@@ -1009,6 +1014,20 @@ class MDownerApp {
       console.log('Received prepare-save event:', filePath);
       const content = this.editor.getHTML();
       window.electronAPI.writeAndClose(filePath, content);
+    });
+
+    // 菜单栏剪切
+    window.electronAPI.onMenuCut(() => {
+      if (this.editor) {
+        document.execCommand('cut');
+      }
+    });
+
+    // 菜单栏复制
+    window.electronAPI.onMenuCopy(() => {
+      if (this.editor) {
+        document.execCommand('copy');
+      }
     });
   }
   
