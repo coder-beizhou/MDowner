@@ -37271,15 +37271,17 @@ img.ProseMirror-separator {
     walk(div);
     return nodes;
   }
-  function initEditor(app) {
-    const editorElement = document.getElementById("editor");
+  function initEditor(app, editorElement, tabId) {
+    if (!editorElement) {
+      editorElement = document.getElementById("editor");
+    }
     if (!editorElement) {
       console.error("Editor element not found");
-      return;
+      return null;
     }
-    console.log("Initializing editor...");
+    console.log("Initializing editor on #" + editorElement.id + "...");
     try {
-      app.editor = new Editor({
+      var editorInstance = new Editor({
         element: editorElement,
         extensions: [
           StarterKit.configure({
@@ -37309,6 +37311,16 @@ img.ProseMirror-separator {
                   }
                 }
               };
+            },
+            renderHTML: function(_a) {
+              var node = _a.node, HTMLAttributes = _a.HTMLAttributes;
+              var lang = node.attrs.language || "text";
+              return [
+                "pre",
+                mergeAttributes(this.options.HTMLAttributes, HTMLAttributes),
+                ["code", { class: node.attrs.language ? "language-" + node.attrs.language : null }, 0],
+                ["span", { class: "code-lang-tag", contenteditable: "false" }, lang]
+              ];
             }
           }).configure({ HTMLAttributes: { class: "code-block" } }),
           NoCodeBlockFirst,
@@ -37330,13 +37342,16 @@ img.ProseMirror-separator {
           spellCheck: false
         },
         onCreate: () => {
-          console.log("Editor created successfully");
-          app.isEditorReady = true;
-          app.autoDetectLanguages = function() {
-            autoDetectCodeLanguages(app.editor);
-          };
+          console.log("Editor created successfully on #" + editorElement.id);
+          if (!app.isEditorReady) {
+            app.isEditorReady = true;
+            app.autoDetectLanguages = function() {
+              autoDetectCodeLanguages(editorInstance);
+            };
+          }
         },
         onUpdate: ({ editor }) => {
+          if (tabId && app.activeTabId !== tabId) return;
           app.onContentChange();
           app.scheduleOutlineUpdate();
           app.updateStatusBar();
@@ -37347,6 +37362,7 @@ img.ProseMirror-separator {
           }, 300);
         },
         onSelectionUpdate: ({ editor }) => {
+          if (tabId && app.activeTabId !== tabId) return;
           app.updateToolbarState();
           app.updateTableControls();
           if (window.electronAPI) {
@@ -37354,23 +37370,26 @@ img.ProseMirror-separator {
           }
         },
         onFocus: () => {
+          if (tabId && app.activeTabId !== tabId && app.switchTab) {
+            app.switchTab(tabId);
+          }
           app.updateToolbarState();
         },
         onBlur: () => {
           app.saveDraft();
         }
       });
-      applyEditorStyles(app);
+      applyEditorStyles(app, editorElement);
+      return editorInstance;
     } catch (error) {
       console.error("Failed to initialize editor:", error);
+      return null;
     }
   }
-  function applyEditorStyles(app) {
-    const editorElement = document.getElementById("editor");
-    if (editorElement) {
-      editorElement.style.fontSize = `${app.config.fontSize}px`;
-      editorElement.style.lineHeight = app.config.lineHeight.toString();
-    }
+  function applyEditorStyles(app, editorElement) {
+    if (!editorElement) return;
+    editorElement.style.fontSize = `${app.config.fontSize}px`;
+    editorElement.style.lineHeight = app.config.lineHeight.toString();
   }
   var import_core30, import_javascript, import_typescript, import_python, import_java, import_cpp, import_csharp, import_go, import_php, import_ruby, import_sql, import_bash, import_css, import_json, import_xml, import_yaml, import_markdown, import_rust, import_swift, import_kotlin, import_dart, import_lua, import_r, import_scala, import_shell, import_powershell, import_dockerfile, import_graphql, import_scss, import_ini, import_diff, import_makefile, import_perl, import_haskell, import_julia, import_objectivec, import_protobuf, import_cmake, import_elixir, import_clojure, import_groovy, HL_LANGS, CodeHighlight, NoCodeBlockFirst;
   var init_editor_core = __esm({
@@ -37664,10 +37683,17 @@ img.ProseMirror-separator {
     container.addEventListener("scroll", () => {
       app.updateTableControls();
     }, { passive: true });
+    var resizeTimer;
+    window.addEventListener("resize", () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(function() {
+        app.updateTableControls();
+      }, 100);
+    });
   }
   function updateTableControls(app) {
     if (!app._tableOverlay) return;
-    const editorEl = document.getElementById("editor");
+    var editorEl = app.getActiveTab ? app.getActiveTab().editorEl || document.getElementById("editor-container") : document.getElementById("editor");
     const container = document.getElementById("editor-container");
     if (!editorEl || !container) return;
     const wrappers = editorEl.querySelectorAll(".tableWrapper");
@@ -37725,37 +37751,6 @@ img.ProseMirror-separator {
         }
       });
     }
-    var codePres = editorEl.querySelectorAll(".ProseMirror pre");
-    codePres.forEach(function(preEl) {
-      var preRect = preEl.getBoundingClientRect();
-      var top = preRect.top - containerRect.top + container.scrollTop;
-      var left = preRect.right - containerRect.left + container.scrollLeft - 8;
-      var lang = "text";
-      var codeEl = preEl.querySelector("code");
-      if (codeEl) {
-        var langClass = Array.from(codeEl.classList).find(function(c) {
-          return c.startsWith("language-");
-        });
-        if (langClass) {
-          lang = langClass.replace("language-", "");
-        }
-      }
-      if (lang === "text" && app.editor && app.isEditorReady && codeEl) {
-        try {
-          var pos = app.editor.view.posAtDOM(codeEl, 0);
-          var $pos = app.editor.state.doc.resolve(pos);
-          for (var d2 = $pos.depth; d2 >= 1; d2--) {
-            var node = $pos.node(d2);
-            if (node.type.name === "codeBlock") {
-              lang = node.attrs.language || "text";
-              break;
-            }
-          }
-        } catch (e) {
-        }
-      }
-      html2 += '<div class="code-lang-tag" style="top:' + (top + 4) + "px;left:" + left + 'px;transform:translateX(-100%)">' + lang + "</div>";
-    });
     app._tableOverlay.innerHTML = html2;
     app._tableOverlay.querySelectorAll(".table-ctrl-btn").forEach(function(btn) {
       btn.addEventListener("click", function(e) {
@@ -37892,7 +37887,21 @@ img.ProseMirror-separator {
             e.preventDefault();
             app.toggleTheme();
             return;
+          case "Tab":
+            e.preventDefault();
+            app.prevTab();
+            return;
         }
+      }
+      if (ctrl && !e.shiftKey && e.key === "Tab") {
+        e.preventDefault();
+        app.nextTab();
+        return;
+      }
+      if (ctrl && !e.shiftKey && e.key === "w") {
+        e.preventDefault();
+        app.closeActiveTab();
+        return;
       }
     });
   }
@@ -40359,64 +40368,202 @@ ${content}</tr>
     }
   });
 
-  // src/renderer/js/file-ops.js
-  function newFile(app) {
-    if (!app.editor || !app.isEditorReady) {
-      console.warn("Editor not ready for newFile");
-      return;
+  // src/renderer/js/tabs.js
+  function genTabId() {
+    return "tab_" + Math.random().toString(36).slice(2, 10);
+  }
+  function initTabBar(app) {
+  }
+  function getActiveTab(app) {
+    return app.tabs.find(function(t) {
+      return t.id === app.activeTabId;
+    }) || null;
+  }
+  function createTab(app, filePath, content, noSwitch) {
+    var tabId = genTabId();
+    var fileName = filePath ? filePath.split(/[/\\]/).pop() : "\u672A\u547D\u540D";
+    var wrapper = document.createElement("div");
+    wrapper.id = "tab-wrapper-" + tabId;
+    wrapper.style.display = "none";
+    var editorDiv = document.createElement("div");
+    editorDiv.id = "editor-" + tabId;
+    editorDiv.className = "tab-editor";
+    wrapper.appendChild(editorDiv);
+    var container = document.getElementById("editor-container");
+    if (container) container.appendChild(wrapper);
+    var editor = initEditor(app, editorDiv, tabId);
+    var tab = {
+      id: tabId,
+      filePath: filePath || null,
+      fileName,
+      isModified: false,
+      editor,
+      editorEl: editorDiv,
+      wrapperEl: wrapper
+    };
+    app.tabs.push(tab);
+    if (content) {
+      setFileContent(app, tab, content);
     }
-    app._suppressContentChange = true;
-    app.editor.commands.clearContent();
-    app.currentFile = null;
-    app.isModified = false;
+    if (!noSwitch) {
+      switchTab(app, tabId);
+    }
+    updateTabBar(app);
+    if (!noSwitch) saveTabConfig(app);
+    return tabId;
+  }
+  function switchTab(app, tabId) {
+    if (app.activeTabId === tabId) return;
+    var oldTab = getActiveTab(app);
+    if (oldTab && oldTab.wrapperEl) {
+      oldTab.wrapperEl.style.display = "none";
+    }
+    app.activeTabId = tabId;
+    var newTab = getActiveTab(app);
+    if (newTab && newTab.wrapperEl) {
+      newTab.wrapperEl.style.display = "";
+    }
+    updateTabBar(app);
+    saveTabConfig(app);
+    app.updateToolbarState();
     app.updateStatusBar();
     app.updateOutline();
-    app._suppressContentChange = false;
-    console.log("New file created");
+    app.updateTableControls();
+    notifyMain(app);
   }
-  function openFile(app, path, content) {
-    console.log("Opening file:", path);
-    if (!app.editor) {
-      console.error("Editor not initialized");
-      return;
-    }
-    if (!app.isEditorReady) {
-      if (app._pendingFileCheck) {
-        clearInterval(app._pendingFileCheck);
-        clearTimeout(app._pendingFileTimeout);
+  function closeTab(app, tabId) {
+    var tab = app.tabs.find(function(t) {
+      return t.id === tabId;
+    });
+    if (!tab) return;
+    if (tab.isModified && tab.filePath) {
+      if (window.electronAPI) {
+        window.electronAPI.saveFile(tab.filePath, tab.editor.getHTML());
       }
-      app._pendingFileCheck = setInterval(() => {
-        if (app.isEditorReady) {
-          clearInterval(app._pendingFileCheck);
-          clearTimeout(app._pendingFileTimeout);
-          app._pendingFileCheck = null;
-          app._pendingFileTimeout = null;
-          setFileContent(app, path, content);
-        }
-      }, 100);
-      app._pendingFileTimeout = setTimeout(() => {
-        clearInterval(app._pendingFileCheck);
-        app._pendingFileCheck = null;
-        app._pendingFileTimeout = null;
-        if (!app.isEditorReady) console.error("Editor ready timeout");
-      }, 5e3);
-      return;
     }
-    setFileContent(app, path, content);
+    if (tab.editor) {
+      tab.editor.destroy();
+    }
+    if (tab.wrapperEl && tab.wrapperEl.parentNode) {
+      tab.wrapperEl.parentNode.removeChild(tab.wrapperEl);
+    }
+    var idx = app.tabs.indexOf(tab);
+    if (idx !== -1) app.tabs.splice(idx, 1);
+    if (app.tabs.length === 0) {
+      createTab(app);
+    } else if (app.activeTabId === tabId) {
+      var newIdx = Math.min(idx, app.tabs.length - 1);
+      switchTab(app, app.tabs[newIdx].id);
+    } else {
+      updateTabBar(app);
+      saveTabConfig(app);
+    }
   }
-  function setFileContent(app, path, content) {
+  function nextTab(app) {
+    if (app.tabs.length < 2) return;
+    var active = getActiveTab(app);
+    if (!active) return;
+    var idx = app.tabs.indexOf(active);
+    var nextIdx = (idx + 1) % app.tabs.length;
+    switchTab(app, app.tabs[nextIdx].id);
+  }
+  function prevTab(app) {
+    if (app.tabs.length < 2) return;
+    var active = getActiveTab(app);
+    if (!active) return;
+    var idx = app.tabs.indexOf(active);
+    var prevIdx = (idx - 1 + app.tabs.length) % app.tabs.length;
+    switchTab(app, app.tabs[prevIdx].id);
+  }
+  function updateTabBar(app) {
+    var tabList = document.getElementById("tab-list");
+    if (!tabList) return;
+    tabList.innerHTML = "";
+    app.tabs.forEach(function(tab) {
+      var item = document.createElement("div");
+      item.className = "tab-item" + (tab.id === app.activeTabId ? " active" : "") + (tab.isModified ? " modified" : "");
+      item.title = tab.filePath || "\u672A\u547D\u540D";
+      item.setAttribute("data-tab-id", tab.id);
+      var title = document.createElement("span");
+      title.className = "tab-title";
+      title.textContent = tab.fileName;
+      var dot = document.createElement("span");
+      dot.className = "tab-dot";
+      dot.textContent = "\u2022";
+      var close2 = document.createElement("span");
+      close2.className = "tab-close";
+      close2.innerHTML = "&times;";
+      item.appendChild(title);
+      item.appendChild(dot);
+      item.appendChild(close2);
+      tabList.appendChild(item);
+      item.addEventListener("mousedown", function(e) {
+        if (e.target === close2) return;
+        switchTab(app, tab.id);
+      });
+      item.addEventListener("auxclick", function(e) {
+        if (e.button === 1) {
+          e.preventDefault();
+          closeTab(app, tab.id);
+        }
+      });
+      close2.addEventListener("mousedown", function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        closeTab(app, tab.id);
+      });
+    });
+    var newBtn = document.getElementById("tab-new");
+    if (newBtn) {
+      newBtn.onclick = function() {
+        createTab(app);
+      };
+    }
+  }
+  function notifyMain(app) {
+    var tab = getActiveTab(app);
+    if (!tab) return;
+    if (window.electronAPI && window.electronAPI.activeTabChanged) {
+      window.electronAPI.activeTabChanged({
+        filePath: tab.filePath,
+        fileName: tab.fileName,
+        isModified: tab.isModified
+      });
+    }
+  }
+  function notifyModified(app) {
+    var tab = getActiveTab(app);
+    if (!tab) return;
+    updateTabBar(app);
+    notifyMain(app);
+  }
+  function saveTabConfig(app) {
+    if (!app.config) return;
+    app.config.openTabs = app.tabs.filter(function(t) {
+      return t.filePath;
+    }).map(function(t) {
+      return { filePath: t.filePath };
+    });
+    app.config.activeTabIndex = app.tabs.indexOf(getActiveTab(app));
+    app.saveConfig();
+  }
+  var init_tabs = __esm({
+    "src/renderer/js/tabs.js"() {
+      init_editor_core();
+      init_file_ops();
+    }
+  });
+
+  // src/renderer/js/file-ops.js
+  function setFileContent(app, tab, content) {
     try {
       app._suppressContentChange = true;
-      const trimmed = content?.trim();
+      var trimmed = (content || "").trim();
       if (trimmed && trimmed.startsWith("{") && trimmed.includes('"type":"doc"')) {
-        app.editor.commands.setContent(JSON.parse(trimmed));
+        tab.editor.commands.setContent(JSON.parse(trimmed));
       } else {
-        app.editor.commands.setContent(marked.parse(content || ""));
+        tab.editor.commands.setContent(marked.parse(content || ""));
       }
-      app.currentFile = path;
-      app.isModified = false;
-      app.updateStatusBar();
-      app.updateOutline();
       clearTimeout(app._autoDetectTimer);
       if (app.autoDetectLanguages) app.autoDetectLanguages();
     } catch (error) {
@@ -40426,33 +40573,33 @@ ${content}</tr>
     }
   }
   function getContent(app) {
-    if (!app.editor || !app.isEditorReady) return "";
-    return app.editor.getHTML();
+    var tab = getActiveTab(app);
+    if (!tab || !tab.editor || !app.isEditorReady) return "";
+    return tab.editor.getHTML();
   }
   async function saveDraft(app) {
-    if (!app.editor || !app.isEditorReady) return;
+    var tab = getActiveTab(app);
+    if (!tab || !tab.editor || !app.isEditorReady) return;
     if (!window.electronAPI) return;
     try {
-      const html2 = app.editor.getHTML();
-      const draftPath = await window.electronAPI.getDraftPath();
+      var html2 = tab.editor.getHTML();
+      var draftPath = await window.electronAPI.getDraftPath(tab.id);
       await window.electronAPI.writeFile(draftPath, html2);
     } catch (error) {
       console.error("Failed to save draft:", error);
     }
   }
   async function exportPDF(app, pdfPath) {
-    if (!app.editor || !app.isEditorReady) {
+    var tab = getActiveTab(app);
+    if (!tab || !tab.editor || !app.isEditorReady) {
       console.error("Editor not ready for export");
       return;
     }
     try {
       if (!window.electronAPI) return;
-      const content = app.editor.getHTML();
-      const html2 = `<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>MDowner Export</title>
-<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.6;max-width:800px;margin:0 auto;padding:40px;color:#333}h1,h2,h3,h4,h5,h6{margin-top:1.5em;margin-bottom:.5em}h1{font-size:2em}h2{font-size:1.5em}h3{font-size:1.25em}p{margin:1em 0}code{background:#f5f5f5;padding:.2em .4em;border-radius:4px;font-family:monospace}pre{background:#f5f5f5;padding:1em;border-radius:6px;overflow-x:auto}pre code{background:none;padding:0}blockquote{border-left:4px solid #ddd;margin:1em 0;padding-left:1em;color:#666}table{border-collapse:collapse;width:100%;margin:1em 0}th,td{border:1px solid #ddd;padding:.5em .75em;text-align:left}th{background:#f5f5f5;font-weight:600}img{max-width:100%;height:auto}ul,ol{padding-left:1.5em}li{margin:.25em 0}</style>
-</head><body>${content}</body></html>`;
-      const result = await window.electronAPI.generatePDF(pdfPath, html2);
+      var content = tab.editor.getHTML();
+      var html2 = '<!DOCTYPE html>\n<html><head><meta charset="UTF-8"><title>MDowner Export</title>\n<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.6;max-width:800px;margin:0 auto;padding:40px;color:#333}h1,h2,h3,h4,h5,h6{margin-top:1.5em;margin-bottom:.5em}h1{font-size:2em}h2{font-size:1.5em}h3{font-size:1.25em}p{margin:1em 0}code{background:#f5f5f5;padding:.2em .4em;border-radius:4px;font-family:monospace}pre{background:#f5f5f5;padding:1em;border-radius:6px;overflow-x:auto}pre code{background:none;padding:0}blockquote{border-left:4px solid #ddd;margin:1em 0;padding-left:1em;color:#666}table{border-collapse:collapse;width:100%;margin:1em 0}th,td{border:1px solid #ddd;padding:.5em .75em;text-align:left}th{background:#f5f5f5;font-weight:600}img{max-width:100%;height:auto}ul,ol{padding-left:1.5em}li{margin:.25em 0}</style>\n</head><body>' + content + "</body></html>";
+      var result = await window.electronAPI.generatePDF(pdfPath, html2);
       if (result.success) {
         alert("PDF\u5BFC\u51FA\u6210\u529F");
       } else {
@@ -40466,6 +40613,7 @@ ${content}</tr>
   var init_file_ops = __esm({
     "src/renderer/js/file-ops.js"() {
       init_marked_esm();
+      init_tabs();
     }
   });
 
@@ -40613,11 +40761,11 @@ ${content}</tr>
       init_file_ops();
       init_ui();
       init_config();
+      init_tabs();
       var MDownerApp = class {
         constructor() {
-          this.editor = null;
-          this.currentFile = null;
-          this.isModified = false;
+          this.tabs = [];
+          this.activeTabId = null;
           this.isEditorReady = false;
           this.config = {
             theme: "light",
@@ -40627,15 +40775,40 @@ ${content}</tr>
             autoSaveInterval: 6e4,
             recentFiles: [],
             lastOpenedFile: null,
+            openTabs: [],
+            activeTabIndex: 0,
             sidebarVisible: true,
             sidebarWidth: 250
           };
           this.init();
         }
+        // 透明代理到活动标签 —— 所有现有模块零改动
+        get editor() {
+          var t = getActiveTab(this);
+          return t ? t.editor : null;
+        }
+        get currentFile() {
+          var t = getActiveTab(this);
+          return t ? t.filePath : null;
+        }
+        get isModified() {
+          var t = getActiveTab(this);
+          return t ? t.isModified : false;
+        }
+        set isModified(v) {
+          var t = getActiveTab(this);
+          if (t) {
+            t.isModified = v;
+            notifyModified(this);
+          }
+        }
+        getActiveTab() {
+          return getActiveTab(this);
+        }
         async init() {
           console.log("MDowner initializing...");
           await loadConfig(this);
-          initEditor(this);
+          initTabBar(this);
           initToolbar(this);
           initShortcuts(this);
           initSidebar(this);
@@ -40647,14 +40820,57 @@ ${content}</tr>
           initImagePaste(this);
           applyTheme(this, this.config.theme);
           applyConfig(this);
+          await this.restoreTabs();
           console.log("MDowner initialized successfully");
           if (window.electronAPI) {
             window.electronAPI.sendRendererReady();
           }
         }
+        async restoreTabs() {
+          var openTabs = this.config.openTabs || [];
+          if (openTabs.length === 0 && this.config.lastOpenedFile) {
+            openTabs = [{ filePath: this.config.lastOpenedFile }];
+          }
+          if (openTabs.length > 0) {
+            var validFiles = [];
+            var readPromises = openTabs.map(function(tabInfo) {
+              return window.electronAPI.readFile(tabInfo.filePath).then(
+                function(content) {
+                  validFiles.push({ filePath: tabInfo.filePath, content });
+                },
+                function() {
+                  console.log("Tab restore skipped (file missing):", tabInfo.filePath);
+                }
+              );
+            });
+            await Promise.all(readPromises);
+            if (validFiles.length < openTabs.length) {
+              this.config.openTabs = validFiles.map(function(f) {
+                return { filePath: f.filePath };
+              });
+              this.saveConfig();
+            }
+            for (var i = 0; i < validFiles.length; i++) {
+              createTab(this, validFiles[i].filePath, validFiles[i].content, true);
+            }
+            var idx = Math.min(this.config.activeTabIndex || 0, this.tabs.length - 1);
+            if (idx >= 0 && this.tabs[idx]) {
+              switchTab(this, this.tabs[idx].id);
+            }
+            saveTabConfig(this);
+          }
+          if (this.tabs.length === 0) {
+            createTab(this);
+          }
+          var self = this;
+          setTimeout(function() {
+            self.updateOutline();
+            self.updateStatusBar();
+            self.updateToolbarState();
+          }, 50);
+        }
         // 转发到各模块
         initEditor() {
-          initEditor(this);
         }
         initToolbar() {
           initToolbar(this);
@@ -40720,22 +40936,37 @@ ${content}</tr>
           initDragDrop(this);
         }
         newFile() {
-          newFile(this);
+          createTab(this);
         }
         openFile(p, c) {
-          openFile(this, p, c);
+          createTab(this, p, c);
         }
         setFileContent(p, c) {
-          setFileContent(this, p, c);
+          var t = getActiveTab(this);
+          if (t) setFileContent(this, t, c);
         }
         getContent() {
-          return getContent(this);
+          var t = getActiveTab(this);
+          return t ? getContent(this) : "";
         }
         saveDraft() {
           return saveDraft(this);
         }
         exportPDF(p) {
           return exportPDF(this, p);
+        }
+        switchTab(id) {
+          switchTab(this, id);
+        }
+        closeActiveTab() {
+          var t = getActiveTab(this);
+          if (t) closeTab(this, t.id);
+        }
+        nextTab() {
+          nextTab(this);
+        }
+        prevTab() {
+          prevTab(this);
         }
         applyTheme(t) {
           applyTheme(this, t);
@@ -40773,11 +41004,20 @@ ${content}</tr>
         // 内容变化处理
         onContentChange() {
           if (this._suppressContentChange) return;
-          if (!this.isModified) {
-            this.isModified = true;
+          var tab = getActiveTab(this);
+          if (tab && !tab.isModified) {
+            tab.isModified = true;
             this.updateStatusBar();
+            updateTabBar(this);
             if (window.electronAPI) {
               window.electronAPI.contentModified();
+              if (window.electronAPI.activeTabChanged) {
+                window.electronAPI.activeTabChanged({
+                  filePath: tab.filePath,
+                  fileName: tab.fileName,
+                  isModified: true
+                });
+              }
             }
           }
           if (this.config.autoSave) {
@@ -40786,8 +41026,9 @@ ${content}</tr>
         }
         scheduleAutoSave() {
           if (this.autoSaveTimer) clearTimeout(this.autoSaveTimer);
-          this.autoSaveTimer = setTimeout(() => {
-            this.saveDraft();
+          var self = this;
+          this.autoSaveTimer = setTimeout(function() {
+            self.saveDraft();
           }, this.config.autoSaveInterval);
         }
         // IPC 事件绑定
@@ -40796,41 +41037,120 @@ ${content}</tr>
             console.warn("electronAPI not available");
             return;
           }
-          window.electronAPI.onNewFile(() => {
-            this.newFile();
+          var self = this;
+          window.electronAPI.onNewFile(function() {
+            createTab(self);
           });
-          window.electronAPI.onOpenFile((data) => {
-            this.openFile(data.path, data.content);
+          window.electronAPI.onOpenFile(function(data) {
+            createTab(self, data.path, data.content);
           });
-          window.electronAPI.onFileSaved(() => {
-            this.isModified = false;
-            this.updateStatusBar();
+          window.electronAPI.onFileSaved(function() {
+            var t = getActiveTab(self);
+            if (t) {
+              t.isModified = false;
+            }
+            self.updateStatusBar();
+            updateTabBar(self);
           });
-          window.electronAPI.onConfigLoaded((config) => {
-            this.config = { ...this.config, ...config };
-            this.applyConfig();
+          window.electronAPI.onConfigLoaded(function(config) {
+            self.config = { ...self.config, ...config };
+            self.applyConfig();
           });
-          window.electronAPI.onToggleSidebar(() => {
-            this.toggleSidebar();
+          window.electronAPI.onToggleSidebar(function() {
+            self.toggleSidebar();
           });
-          window.electronAPI.onToggleTheme(() => {
-            this.toggleTheme();
+          window.electronAPI.onToggleTheme(function() {
+            self.toggleTheme();
           });
-          window.electronAPI.onExportPDF((path) => {
-            this.exportPDF(path);
+          window.electronAPI.onExportPDF(function(path) {
+            self.exportPDF(path);
           });
-          window.electronAPI.onPrepareSave((filePath) => {
-            window.electronAPI.writeAndClose(filePath, this.editor.getHTML());
+          window.electronAPI.onPrepareSave(function(filePath) {
+            var t = getActiveTab(self);
+            if (t && t.editor && window.electronAPI) {
+              window.electronAPI.writeAndClose(filePath, t.editor.getHTML());
+            }
           });
-          window.electronAPI.onMenuCut(() => {
-            if (this.editor) document.execCommand("cut");
+          window.electronAPI.onMenuCut(function() {
+            var t = getActiveTab(self);
+            if (t && t.editor) document.execCommand("cut");
           });
-          window.electronAPI.onMenuCopy(() => {
-            if (this.editor) document.execCommand("copy");
+          window.electronAPI.onMenuCopy(function() {
+            var t = getActiveTab(self);
+            if (t && t.editor) document.execCommand("copy");
+          });
+          window.electronAPI.onNextTab(function() {
+            self.nextTab();
+          });
+          window.electronAPI.onPrevTab(function() {
+            self.prevTab();
+          });
+          window.electronAPI.onCloseActiveTab(function() {
+            self.closeActiveTab();
+          });
+          window.electronAPI.onSaveAllTabsClose(function() {
+            self.saveAllTabsAndClose();
+          });
+          window.electronAPI.onFileSave(function() {
+            self.saveActiveTab();
+          });
+          window.electronAPI.onFileSaveAs(function(filePath) {
+            self.saveActiveTabAs(filePath);
           });
         }
+        // 保存活动标签
+        async saveActiveTab() {
+          var tab = getActiveTab(this);
+          if (!tab) return;
+          if (!tab.filePath) {
+            await this.saveActiveTabAs(null);
+            return;
+          }
+          var html2 = tab.editor.getHTML();
+          var result = await window.electronAPI.saveFile(tab.filePath, html2);
+          if (result && result.success) {
+            tab.isModified = false;
+            this.updateStatusBar();
+            updateTabBar(this);
+            window.electronAPI.contentSaved();
+            saveTabConfig(this);
+          }
+        }
+        // 另存为活动标签
+        async saveActiveTabAs(filePath) {
+          var tab = getActiveTab(this);
+          if (!tab) return;
+          var html2 = tab.editor.getHTML();
+          if (filePath) {
+            var result = await window.electronAPI.saveFile(filePath, html2);
+            if (result && result.success) {
+              tab.filePath = filePath;
+              tab.fileName = filePath.split(/[/\\]/).pop();
+              tab.isModified = false;
+              this.updateStatusBar();
+              updateTabBar(this);
+              window.electronAPI.contentSaved();
+              saveTabConfig(this);
+            }
+          }
+        }
+        // 保存所有标签后关闭
+        async saveAllTabsAndClose() {
+          var self = this;
+          for (var i = 0; i < this.tabs.length; i++) {
+            var tab = this.tabs[i];
+            if (tab.isModified && tab.filePath) {
+              var html2 = tab.editor.getHTML();
+              await window.electronAPI.saveFile(tab.filePath, html2);
+              tab.isModified = false;
+            }
+          }
+          updateTabBar(this);
+          saveTabConfig(this);
+          window.electronAPI.allTabsSavedClose();
+        }
       };
-      document.addEventListener("DOMContentLoaded", () => {
+      document.addEventListener("DOMContentLoaded", function() {
         console.log("DOM loaded, starting MDowner...");
         window.mdownerApp = new MDownerApp();
       });

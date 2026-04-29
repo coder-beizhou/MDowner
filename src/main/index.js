@@ -8,9 +8,6 @@ const turndownService = new TurndownService();
 const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
 
 console.log('Electron API loaded successfully');
-console.log('app:', typeof app);
-console.log('BrowserWindow:', typeof BrowserWindow);
-
 
 // 默认配置
 const DEFAULT_CONFIG = {
@@ -21,19 +18,12 @@ const DEFAULT_CONFIG = {
   autoSaveInterval: 60000,
   recentFiles: [],
   lastOpenedFile: null,
-  windowBounds: {
-    x: 100,
-    y: 100,
-    width: 1100,
-    height: 750
-  },
   sidebarVisible: true,
   sidebarWidth: 250
 };
 
 let mainWindow;
-let currentFilePath = null;
-let isModified = false;
+let activeTabInfo = { filePath: null, fileName: '未命名', isModified: false };
 let hasSelection = false;
 let cutMenuItem = null;
 let copyMenuItem = null;
@@ -76,12 +66,11 @@ async function createWindow() {
   const config = await loadConfig();
   
   mainWindow = new BrowserWindow({
-    x: config.windowBounds.x,
-    y: config.windowBounds.y,
-    width: config.windowBounds.width,
-    height: config.windowBounds.height,
+    width: 1200,
+    height: 800,
     minWidth: 800,
     minHeight: 600,
+    center: true,
     icon: path.join(__dirname, '../../assets/icons/icon.ico'),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
@@ -103,49 +92,52 @@ async function createWindow() {
     mainWindow.webContents.send('config-loaded', config);
   });
 
-  // 窗口关闭前检查
+  // 窗口关闭前检查（先阻止关闭，异步查询后再决定）
   mainWindow.on('close', async (e) => {
-    console.log('=== close event fired, isModified =', isModified);
+    console.log('=== close event fired');
+    e.preventDefault();
 
-    // 保存窗口位置（非阻塞）
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      const bounds = mainWindow.getBounds();
-      loadConfig().then(config => {
-        config.windowBounds = bounds;
-        saveConfig(config).catch(() => {});
-      });
+    // 查询渲染进程中所有标签的修改状态
+    var unsaved = null;
+    try {
+      unsaved = await mainWindow.webContents.executeJavaScript(
+        '(function(){var app=window.mdownerApp;if(!app||!app.tabs)return[];return app.tabs.filter(function(t){return t.isModified}).map(function(t){return{id:t.id,fileName:t.fileName,filePath:t.filePath}});})()'
+      );
+      console.log('=== unsaved tabs:', JSON.stringify(unsaved));
+    } catch(ex) {
+      console.error('=== check-unsaved error:', ex);
     }
 
-    if (isModified) {
-      e.preventDefault();
-      console.log('=== showing save dialog');
-      
-      try {
-        const result = await dialog.showMessageBox(mainWindow, {
-          type: 'question',
-          buttons: ['保存', '不保存', '取消'],
-          defaultId: 0,
-          title: '保存更改',
-          message: '文档已修改，是否保存更改？'
-        });
+    if (!unsaved || unsaved.length === 0) {
+      // 没有未保存的标签，直接关闭
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
+      return;
+    }
 
-        if (result.response === 0) {
-          // 选保存 -> 调用saveFile函数处理保存逻辑
-          await saveFile();
-          // 保存完成后关闭窗口
-          if (!isModified) {
-            mainWindow.destroy();
-          }
-        } else if (result.response === 1) {
-          // 不保存，直接关
-          mainWindow.destroy();
-        }
-        // 取消：什么都不做，窗口保持打开
-      } catch (error) {
-        console.error('Close dialog error:', error);
-        // 出错时强制关闭
-        mainWindow.destroy();
+    console.log('=== showing save dialog, unsaved:', unsaved.length);
+    try {
+      var msg = unsaved.length === 1
+        ? '「' + unsaved[0].fileName + '」有未保存的更改，是否保存？'
+        : unsaved.length + ' 个标签页有未保存的更改，是否保存全部？';
+
+      var result = await dialog.showMessageBox(mainWindow, {
+        type: 'question',
+        buttons: ['保存全部', '不保存', '取消'],
+        defaultId: 0,
+        cancelId: 2,
+        title: '保存更改',
+        message: msg
+      });
+
+      if (result.response === 0) {
+        safeSend('save-all-tabs-close');
+      } else if (result.response === 1) {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
       }
+      // 取消：什么都不做，窗口保持打开
+    } catch (error) {
+      console.error('Close dialog error:', error);
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
     }
   });
 
@@ -232,6 +224,32 @@ function createMenu() {
       ]
     },
     {
+      label: '标签',
+      submenu: [
+        {
+          label: '新建标签',
+          accelerator: 'CmdOrCtrl+T',
+          click: () => { safeSend('new-file'); }
+        },
+        {
+          label: '下一个标签',
+          accelerator: 'CmdOrCtrl+Tab',
+          click: () => safeSend('next-tab')
+        },
+        {
+          label: '上一个标签',
+          accelerator: 'CmdOrCtrl+Shift+Tab',
+          click: () => safeSend('prev-tab')
+        },
+        { type: 'separator' },
+        {
+          label: '关闭标签',
+          accelerator: 'CmdOrCtrl+W',
+          click: () => safeSend('close-active-tab')
+        }
+      ]
+    },
+    {
       label: '帮助',
       submenu: [
         {
@@ -253,26 +271,8 @@ function createMenu() {
   Menu.setApplicationMenu(menu);
 }
 
-// 新建文件
+// 新建文件（新标签）
 async function newFile() {
-  if (isModified) {
-    const result = await dialog.showMessageBox(mainWindow, {
-      type: 'question',
-      buttons: ['保存', '不保存', '取消'],
-      defaultId: 0,
-      title: '保存更改',
-      message: '文档已修改，是否保存更改？'
-    });
-    
-    if (result.response === 0) {
-      await saveFile();
-    } else if (result.response === 2) {
-      return;
-    }
-  }
-  
-  currentFilePath = null;
-  isModified = false;
   safeSend('new-file');
   updateTitle();
 }
@@ -288,19 +288,18 @@ async function openFileDialog() {
   });
 
   if (!result.canceled && result.filePaths.length > 0) {
-    await openFile(result.filePaths[0]);
+    for (const fp of result.filePaths) {
+      await openFile(fp);
+    }
   }
 }
 
-// 打开文件
+// 打开文件（在新标签中）
 async function openFile(filePath) {
   try {
     const content = await fsPromises.readFile(filePath, 'utf-8');
-    currentFilePath = filePath;
-    isModified = false;
     safeSend('open-file', { path: filePath, content });
-    updateTitle();
-    
+
     // 更新最近文件列表
     const config = await loadConfig();
     config.recentFiles = [filePath, ...config.recentFiles.filter(f => f !== filePath)].slice(0, 10);
@@ -311,42 +310,25 @@ async function openFile(filePath) {
   }
 }
 
-// 保存文件
+// 保存文件（通过渲染进程）
 async function saveFile() {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return;
-  }
-
-  if (currentFilePath) {
-    try {
-      // 获取编辑器HTML内容并转换为Markdown
-      const htmlContent = await mainWindow.webContents.executeJavaScript('document.querySelector(".ProseMirror")?.innerHTML || ""');
-      const content = turndownService.turndown(htmlContent);
-      await fsPromises.writeFile(currentFilePath, content, 'utf-8');
-      isModified = false;
-      safeSend('file-saved');
-      updateTitle();
-    } catch (error) {
-      dialog.showErrorBox('错误', `无法保存文件: ${error.message}`);
-    }
-  } else {
-    await saveFileAs();
-  }
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  safeSend('file-save');
 }
 
 // 另存为
 async function saveFileAs() {
+  var defaultPath = activeTabInfo.fileName || '未命名.md';
   const result = await dialog.showSaveDialog(mainWindow, {
     filters: [
       { name: 'Markdown文件', extensions: ['md'] },
       { name: '所有文件', extensions: ['*'] }
     ],
-    defaultPath: '未命名.md'
+    defaultPath: defaultPath
   });
 
   if (!result.canceled && result.filePath) {
-    currentFilePath = result.filePath;
-    await saveFile();
+    safeSend('file-save-as', result.filePath);
   }
 }
 
@@ -356,7 +338,7 @@ async function exportPDF() {
     filters: [
       { name: 'PDF文件', extensions: ['pdf'] }
     ],
-    defaultPath: currentFilePath ? currentFilePath.replace('.md', '.pdf') : '未命名.pdf'
+    defaultPath: activeTabInfo.filePath ? activeTabInfo.filePath.replace('.md', '.pdf') : '未命名.pdf'
   });
 
   if (!result.canceled && result.filePath) {
@@ -367,9 +349,9 @@ async function exportPDF() {
 // 更新窗口标题
 function updateTitle() {
   if (mainWindow && !mainWindow.isDestroyed()) {
-    const fileName = currentFilePath ? path.basename(currentFilePath) : '未命名';
-    const modified = isModified ? ' •' : '';
-    mainWindow.setTitle(`${fileName}${modified} - MDowner`);
+    var name = activeTabInfo.fileName || '未命名';
+    var modified = activeTabInfo.isModified ? ' •' : '';
+    mainWindow.setTitle(name + modified + ' - MDowner');
   }
 }
 
@@ -393,8 +375,9 @@ function registerIPCHandlers() {
     }
   });
 
-  ipcMain.handle('get-draft-path', () => {
-    return path.join(app.getPath('userData'), 'draft.md');
+  ipcMain.handle('get-draft-path', (_, tabId) => {
+    var fileName = tabId ? 'draft_' + tabId + '.md' : 'draft.md';
+    return path.join(app.getPath('userData'), fileName);
   });
 
   ipcMain.handle('generate-pdf', async (event, pdfPath, htmlContent) => {
@@ -587,21 +570,46 @@ function registerIPCHandlers() {
     if (copyMenuItem) copyMenuItem.enabled = hasSelection;
   });
 
+  // 活动标签信息变更 → 更新窗口标题
+  ipcMain.on('active-tab-changed', (_, info) => {
+    activeTabInfo = info || { filePath: null, fileName: '未命名', isModified: false };
+    updateTitle();
+  });
+
+  // 渲染进程保存文件（HTML → Markdown → 写入磁盘）
+  ipcMain.handle('save-file', async (_, filePath, htmlContent) => {
+    try {
+      var content = turndownService.turndown(htmlContent || '');
+      await fsPromises.writeFile(filePath, content, 'utf-8');
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // 全部保存后关闭
+  ipcMain.on('all-tabs-saved-close', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.destroy();
+    }
+  });
+
   ipcMain.on('content-modified', () => {
-    console.log('=== content-modified received, setting isModified = true');
-    isModified = true;
+    console.log('=== content-modified received');
+    if (activeTabInfo) activeTabInfo.isModified = true;
     updateTitle();
   });
 
   ipcMain.on('content-saved', () => {
-    isModified = false;
+    if (activeTabInfo) activeTabInfo.isModified = false;
     updateTitle();
   });
 
   ipcMain.on('dropped-files', async (_, filePaths) => {
     if (filePaths && filePaths.length > 0) {
-      // 打开第一个拖拽的文件
-      await openFile(filePaths[0]);
+      for (const fp of filePaths) {
+        await openFile(fp);
+      }
     }
   });
 

@@ -30,7 +30,17 @@ export function initShortcuts(app) {
         case 'G': e.preventDefault(); app.insertTable(); return;
         case 'H': e.preventDefault(); app.insertHr(); return;
         case 'L': e.preventDefault(); app.toggleTheme(); return;
+        case 'Tab': e.preventDefault(); app.prevTab(); return;
       }
+    }
+
+    // Ctrl+Tab: 下一个标签
+    if (ctrl && !e.shiftKey && e.key === 'Tab') {
+      e.preventDefault(); app.nextTab(); return;
+    }
+    // Ctrl+W: 关闭当前标签
+    if (ctrl && !e.shiftKey && e.key === 'w') {
+      e.preventDefault(); app.closeActiveTab(); return;
     }
   });
 }

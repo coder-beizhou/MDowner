@@ -18,9 +18,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // 内容
   getContent: () => ipcRenderer.invoke('get-content'),
-  getDraftPath: () => ipcRenderer.invoke('get-draft-path'),
+  getDraftPath: (tabId) => ipcRenderer.invoke('get-draft-path', tabId),
+  saveFile: (filePath, htmlContent) => ipcRenderer.invoke('save-file', filePath, htmlContent),
   generatePDF: (pdfPath, htmlContent) => ipcRenderer.invoke('generate-pdf', pdfPath, htmlContent),
-  
+
   // 事件监听（绑定前先移除旧监听器，防止重复绑定）
   onNewFile: (callback) => {
     ipcRenderer.removeAllListeners('new-file');
@@ -50,6 +51,31 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('export-pdf');
     ipcRenderer.on('export-pdf', (event, path) => callback(path));
   },
+  // 标签页
+  onNextTab: (callback) => {
+    ipcRenderer.removeAllListeners('next-tab');
+    ipcRenderer.on('next-tab', callback);
+  },
+  onPrevTab: (callback) => {
+    ipcRenderer.removeAllListeners('prev-tab');
+    ipcRenderer.on('prev-tab', callback);
+  },
+  onCloseActiveTab: (callback) => {
+    ipcRenderer.removeAllListeners('close-active-tab');
+    ipcRenderer.on('close-active-tab', callback);
+  },
+  onSaveAllTabsClose: (callback) => {
+    ipcRenderer.removeAllListeners('save-all-tabs-close');
+    ipcRenderer.on('save-all-tabs-close', callback);
+  },
+  onFileSave: (callback) => {
+    ipcRenderer.removeAllListeners('file-save');
+    ipcRenderer.on('file-save', callback);
+  },
+  onFileSaveAs: (callback) => {
+    ipcRenderer.removeAllListeners('file-save-as');
+    ipcRenderer.on('file-save-as', (event, filePath) => callback(filePath));
+  },
   
   // 图片操作
   openImageDialog: () => ipcRenderer.invoke('open-image-dialog'),
@@ -60,6 +86,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 // 事件发送
   contentModified: () => ipcRenderer.send('content-modified'),
   contentSaved: () => ipcRenderer.send('content-saved'),
+  activeTabChanged: (info) => ipcRenderer.send('active-tab-changed', info),
+  allTabsSavedClose: () => ipcRenderer.send('all-tabs-saved-close'),
   selectionChanged: (hasSelection) => ipcRenderer.send('selection-changed', hasSelection),
   sendDroppedFiles: (paths) => ipcRenderer.send('dropped-files', paths),
 

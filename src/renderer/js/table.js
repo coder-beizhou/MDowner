@@ -47,12 +47,19 @@ export function initTableOverlay(app) {
   container.addEventListener('scroll', () => {
     app.updateTableControls();
   }, { passive: true });
+
+  // 窗口缩放时重新计算表格按钮和代码块标签位置
+  var resizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function() { app.updateTableControls(); }, 100);
+  });
 }
 
 export function updateTableControls(app) {
   if (!app._tableOverlay) return;
 
-  const editorEl = document.getElementById('editor');
+  var editorEl = app.getActiveTab ? (app.getActiveTab().editorEl || document.getElementById('editor-container')) : document.getElementById('editor');
   const container = document.getElementById('editor-container');
   if (!editorEl || !container) return;
 
@@ -126,38 +133,6 @@ export function updateTableControls(app) {
     }
   });
   } // 结束 if (wrappers.length > 0)
-
-  // 代码块语言标签
-  // TipTap 将 language- 类放在 <code> 上，优先从 <code> 读取
-  var codePres = editorEl.querySelectorAll('.ProseMirror pre');
-  codePres.forEach(function(preEl) {
-    var preRect = preEl.getBoundingClientRect();
-    var top = preRect.top - containerRect.top + container.scrollTop;
-    var left = preRect.right - containerRect.left + container.scrollLeft - 8;
-    var lang = 'text';
-    var codeEl = preEl.querySelector('code');
-    if (codeEl) {
-      var langClass = Array.from(codeEl.classList).find(function(c) { return c.startsWith('language-'); });
-      if (langClass) {
-        lang = langClass.replace('language-', '');
-      }
-    }
-    // 备用：从 ProseMirror 节点属性读取
-    if (lang === 'text' && app.editor && app.isEditorReady && codeEl) {
-      try {
-        var pos = app.editor.view.posAtDOM(codeEl, 0);
-        var $pos = app.editor.state.doc.resolve(pos);
-        for (var d = $pos.depth; d >= 1; d--) {
-          var node = $pos.node(d);
-          if (node.type.name === 'codeBlock') {
-            lang = node.attrs.language || 'text';
-            break;
-          }
-        }
-      } catch(e) {}
-    }
-    html += '<div class="code-lang-tag" style="top:' + (top + 4) + 'px;left:' + left + 'px;transform:translateX(-100%)">' + lang + '</div>';
-  });
 
   // 一次性设置所有 HTML
   app._tableOverlay.innerHTML = html;

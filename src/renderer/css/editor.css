@@ -5,10 +5,10 @@
   background-color: var(--bg-primary);
 }
 
-#editor {
+.tab-editor {
   max-width: 800px;
   margin: 0 auto;
-  min-height: calc(100vh - var(--toolbar-height) - var(--statusbar-height) - 80px);
+  min-height: calc(100vh - var(--toolbar-height) - var(--tab-height) - var(--statusbar-height) - 80px);
 }
 
 /* TipTap编辑器样式 */
@@ -102,6 +102,7 @@
 
 /* 代码块 */
 .ProseMirror pre {
+  position: relative;
   background-color: var(--code-bg);
   border: 1px solid var(--code-border);
   border-radius: 6px;

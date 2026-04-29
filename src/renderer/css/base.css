@@ -119,9 +119,125 @@ code, pre {
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
 }
 
+/* 标签栏 */
+#tab-bar {
+  display: flex;
+  align-items: center;
+  height: var(--tab-height);
+  background-color: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+#tab-list {
+  display: flex;
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+  height: 100%;
+}
+
+#tab-list::-webkit-scrollbar {
+  height: 3px;
+}
+
+.tab-item {
+  display: flex;
+  align-items: center;
+  min-width: 60px;
+  max-width: 180px;
+  height: 100%;
+  padding: 0 6px 0 12px;
+  border-right: 1px solid var(--border-color);
+  background-color: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background-color var(--transition-fast);
+}
+
+.tab-item:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.tab-item.active {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  box-shadow: inset 0 -2px 0 var(--accent-color);
+}
+
+.tab-dot {
+  color: var(--accent-color);
+  font-weight: bold;
+  font-size: 14px;
+  margin: 0 2px;
+  flex-shrink: 0;
+  display: none;
+}
+.tab-item.modified .tab-dot {
+  display: inline;
+}
+
+.tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  line-height: var(--tab-height);
+}
+
+.tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  margin-left: 4px;
+  opacity: 0;
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: opacity var(--transition-fast), background-color var(--transition-fast);
+}
+
+.tab-item:hover .tab-close {
+  opacity: 0.5;
+}
+
+.tab-item:hover .tab-close:hover {
+  opacity: 1;
+  background-color: #e04040;
+  color: #fff;
+}
+
+#tab-new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 28px;
+  border-radius: 4px;
+  margin: 0 4px;
+  flex-shrink: 0;
+  font-size: 18px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+#tab-new:hover {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
 /* 打印样式 */
 @media print {
   #toolbar,
+  #tab-bar,
   #sidebar,
   #statusbar {
     display: none !important;
@@ -132,7 +248,7 @@ code, pre {
     overflow: visible !important;
   }
 
-  #editor {
+  .tab-editor {
     max-width: 100% !important;
   }
 

@@ -1,5 +1,5 @@
 // 编辑器初始化与配置
-import { Editor, Extension } from '../../../node_modules/@tiptap/core/dist/index.js';
+import { Editor, Extension, mergeAttributes } from '../../../node_modules/@tiptap/core/dist/index.js';
 import StarterKit from '../../../node_modules/@tiptap/starter-kit/dist/index.js';
 import CodeBlock from '../../../node_modules/@tiptap/extension-code-block/dist/index.js';
 import TaskList from '../../../node_modules/@tiptap/extension-task-list/dist/index.js';
@@ -254,17 +254,19 @@ function parseHighlightResult(html, lang) {
   return nodes;
 }
 
-export function initEditor(app) {
-  const editorElement = document.getElementById('editor');
+export function initEditor(app, editorElement, tabId) {
+  if (!editorElement) {
+    editorElement = document.getElementById('editor');
+  }
   if (!editorElement) {
     console.error('Editor element not found');
-    return;
+    return null;
   }
 
-  console.log('Initializing editor...');
+  console.log('Initializing editor on #' + editorElement.id + '...');
 
   try {
-    app.editor = new Editor({
+    var editorInstance = new Editor({
       element: editorElement,
       extensions: [
         StarterKit.configure({
@@ -294,6 +296,16 @@ export function initEditor(app) {
                 }
               }
             };
+          },
+          renderHTML: function(_a) {
+            var node = _a.node, HTMLAttributes = _a.HTMLAttributes;
+            var lang = node.attrs.language || 'text';
+            return [
+              'pre',
+              mergeAttributes(this.options.HTMLAttributes, HTMLAttributes),
+              ['code', { class: node.attrs.language ? 'language-' + node.attrs.language : null }, 0],
+              ['span', { class: 'code-lang-tag', contenteditable: 'false' }, lang]
+            ];
           }
         }).configure({ HTMLAttributes: { class: 'code-block' } }),
         NoCodeBlockFirst,
@@ -315,45 +327,53 @@ export function initEditor(app) {
         spellCheck: false
       },
       onCreate: () => {
-        console.log('Editor created successfully');
-        app.isEditorReady = true;
-        // 暴露自动检测方法给 file-ops 调用
-        app.autoDetectLanguages = function() {
-          autoDetectCodeLanguages(app.editor);
-        };
+        console.log('Editor created successfully on #' + editorElement.id);
+        if (!app.isEditorReady) {
+          app.isEditorReady = true;
+          // 暴露自动检测方法给 file-ops 调用
+          app.autoDetectLanguages = function() {
+            autoDetectCodeLanguages(editorInstance);
+          };
+        }
       },
       onUpdate: ({ editor }) => {
+        if (tabId && app.activeTabId !== tabId) return;
         app.onContentChange();
         app.scheduleOutlineUpdate();
         app.updateStatusBar();
         app.updateTableControls();
-        // 延迟自动检测，避免在 setContent 等批量操作中干扰
         clearTimeout(app._autoDetectTimer);
         app._autoDetectTimer = setTimeout(function() {
           autoDetectCodeLanguages(editor);
         }, 300);
       },
       onSelectionUpdate: ({ editor }) => {
+        if (tabId && app.activeTabId !== tabId) return;
         app.updateToolbarState();
         app.updateTableControls();
         if (window.electronAPI) {
           window.electronAPI.selectionChanged(!editor.state.selection.empty);
         }
       },
-      onFocus: () => { app.updateToolbarState(); },
+      onFocus: () => {
+        if (tabId && app.activeTabId !== tabId && app.switchTab) {
+          app.switchTab(tabId);
+        }
+        app.updateToolbarState();
+      },
       onBlur: () => { app.saveDraft(); }
     });
 
-    applyEditorStyles(app);
+    applyEditorStyles(app, editorElement);
+    return editorInstance;
   } catch (error) {
     console.error('Failed to initialize editor:', error);
+    return null;
   }
 }
 
-export function applyEditorStyles(app) {
-  const editorElement = document.getElementById('editor');
-  if (editorElement) {
-    editorElement.style.fontSize = `${app.config.fontSize}px`;
-    editorElement.style.lineHeight = app.config.lineHeight.toString();
-  }
+export function applyEditorStyles(app, editorElement) {
+  if (!editorElement) return;
+  editorElement.style.fontSize = `${app.config.fontSize}px`;
+  editorElement.style.lineHeight = app.config.lineHeight.toString();
 }
