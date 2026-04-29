@@ -38,10 +38,6 @@
   background: #666;
 }
 
-/* 深色主题下的选中文本 */
-[data-theme="dark"] ::selection {
-  background-color: #264f78;
-}
 
 /* 深色主题下的表格选中单元格 */
 [data-theme="dark"] .ProseMirror table .selectedCell {

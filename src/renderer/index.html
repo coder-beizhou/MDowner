@@ -1,11 +1,15 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MDowner</title>
+  <script>// 提前恢复主题，避免页面闪烁
+    try{var t=localStorage.getItem('mdowner-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}
+  </script>
   <link rel="stylesheet" href="css/variables.css">
   <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/highlight.css">
   <link rel="stylesheet" href="css/editor.css">
   <link rel="stylesheet" href="css/toolbar.css">
   <link rel="stylesheet" href="css/modal.css">

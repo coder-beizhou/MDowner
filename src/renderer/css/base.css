@@ -45,10 +45,6 @@ html, body {
   background: var(--text-secondary);
 }
 
-/* 选中文本样式 */
-::selection {
-  background-color: var(--accent-color);
-}
 
 /* 焦点样式 */
 :focus {
