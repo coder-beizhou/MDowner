@@ -41170,8 +41170,17 @@ ${content}</tr>
             openTabs = [{ filePath: this.config.lastOpenedFile }];
           }
           if (openTabs.length > 0) {
+            var mdExts = [".md", ".markdown", ".txt"];
+            var filtered = openTabs.filter(function(t) {
+              var ext = t.filePath.slice(t.filePath.lastIndexOf(".")).toLowerCase();
+              return mdExts.indexOf(ext) !== -1;
+            });
+            if (filtered.length < openTabs.length) {
+              this.config.openTabs = filtered;
+              this.saveConfig();
+            }
             var validFiles = [];
-            var readPromises = openTabs.map(function(tabInfo) {
+            var readPromises = filtered.map(function(tabInfo) {
               return window.electronAPI.readFile(tabInfo.filePath).then(
                 function(content) {
                   validFiles.push({ filePath: tabInfo.filePath, content });

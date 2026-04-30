@@ -300,6 +300,12 @@ async function openFileDialog() {
 
 // 打开文件（在新标签中）
 async function openFile(filePath) {
+  // 只接受 Markdown/文本文件
+  var ext = path.extname(filePath).toLowerCase();
+  if (['.md', '.markdown', '.txt'].indexOf(ext) === -1) {
+    console.log('[MAIN] openFile skipped (not markdown):', filePath);
+    return;
+  }
   try {
     const content = await fsPromises.readFile(filePath, 'utf-8');
     console.log('[MAIN] openFile sending open-file IPC:', filePath);

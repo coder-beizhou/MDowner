@@ -67,9 +67,19 @@ class MDownerApp {
       openTabs = [{ filePath: this.config.lastOpenedFile }];
     }
     if (openTabs.length > 0) {
-      // 并行读取所有文件，跳过已不存在的
+      // 过滤非 Markdown 文件（防止 ZIP/exe 等二进制文件卡死渲染进程）
+      var mdExts = ['.md', '.markdown', '.txt'];
+      var filtered = openTabs.filter(function(t) {
+        var ext = t.filePath.slice(t.filePath.lastIndexOf('.')).toLowerCase();
+        return mdExts.indexOf(ext) !== -1;
+      });
+      if (filtered.length < openTabs.length) {
+        this.config.openTabs = filtered;
+        this.saveConfig();
+      }
+      // 并行读取，跳过不存在的
       var validFiles = [];
-      var readPromises = openTabs.map(function(tabInfo) {
+      var readPromises = filtered.map(function(tabInfo) {
         return window.electronAPI.readFile(tabInfo.filePath).then(
           function(content) { validFiles.push({ filePath: tabInfo.filePath, content: content }); },
           function() { console.log('Tab restore skipped (file missing):', tabInfo.filePath); }
