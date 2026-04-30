@@ -24,6 +24,7 @@ const DEFAULT_CONFIG = {
 
 let mainWindow;
 let activeTabInfo = { filePath: null, fileName: '未命名', isModified: false };
+let hasUnsavedTabs = false;
 let hasSelection = false;
 let cutMenuItem = null;
 let copyMenuItem = null;
@@ -92,51 +93,36 @@ async function createWindow() {
     mainWindow.webContents.send('config-loaded', config);
   });
 
-  // 窗口关闭前检查（先阻止关闭，异步查询后再决定）
+  // 窗口关闭前检查
   mainWindow.on('close', async (e) => {
-    console.log('=== close event fired');
-    e.preventDefault();
+    console.log('=== close event fired, hasUnsaved =', hasUnsavedTabs);
+    if (!hasUnsavedTabs) return;
 
-    // 查询渲染进程中所有标签的修改状态
+    e.preventDefault();
     var unsaved = null;
     try {
       unsaved = await mainWindow.webContents.executeJavaScript(
         '(function(){var app=window.mdownerApp;if(!app||!app.tabs)return[];return app.tabs.filter(function(t){return t.isModified}).map(function(t){return{id:t.id,fileName:t.fileName,filePath:t.filePath}});})()'
       );
-      console.log('=== unsaved tabs:', JSON.stringify(unsaved));
-    } catch(ex) {
-      console.error('=== check-unsaved error:', ex);
-    }
+    } catch(ex) {}
 
     if (!unsaved || unsaved.length === 0) {
-      // 没有未保存的标签，直接关闭
+      hasUnsavedTabs = false;
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
       return;
     }
 
-    console.log('=== showing save dialog, unsaved:', unsaved.length);
     try {
       var msg = unsaved.length === 1
         ? '「' + unsaved[0].fileName + '」有未保存的更改，是否保存？'
         : unsaved.length + ' 个标签页有未保存的更改，是否保存全部？';
-
       var result = await dialog.showMessageBox(mainWindow, {
-        type: 'question',
-        buttons: ['保存全部', '不保存', '取消'],
-        defaultId: 0,
-        cancelId: 2,
-        title: '保存更改',
-        message: msg
+        type: 'question', buttons: ['保存全部', '不保存', '取消'],
+        defaultId: 0, cancelId: 2, title: '保存更改', message: msg
       });
-
-      if (result.response === 0) {
-        safeSend('save-all-tabs-close');
-      } else if (result.response === 1) {
-        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
-      }
-      // 取消：什么都不做，窗口保持打开
+      if (result.response === 0) { safeSend('save-all-tabs-close'); }
+      else if (result.response === 1) { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy(); }
     } catch (error) {
-      console.error('Close dialog error:', error);
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
     }
   });
@@ -674,7 +660,7 @@ function registerIPCHandlers() {
   });
 
   ipcMain.on('content-modified', () => {
-    console.log('=== content-modified received');
+    hasUnsavedTabs = true;
     if (activeTabInfo) activeTabInfo.isModified = true;
     updateTitle();
   });
