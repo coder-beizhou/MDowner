@@ -311,6 +311,7 @@ async function closeAllTabs(app) {
 function closeTabSilent(app, tabId) {
   var tab = app.tabs.find(function(t) { return t.id === tabId; });
   if (!tab) return;
+  if (tab.isModified) return; // 防御：已修改标签必须走 closeTab 弹窗确认
   deleteDraft(tabId);
   if (tab.editor) tab.editor.destroy();
   if (tab.wrapperEl && tab.wrapperEl.parentNode) tab.wrapperEl.parentNode.removeChild(tab.wrapperEl);

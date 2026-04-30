@@ -299,12 +299,14 @@ export function initEditor(app, editorElement, tabId) {
           },
           renderHTML: function(_a) {
             var node = _a.node, HTMLAttributes = _a.HTMLAttributes;
-            var lang = node.attrs.language || 'text';
+            var attrs = mergeAttributes(this.options.HTMLAttributes, HTMLAttributes);
+            // 语言标签通过 CSS ::after 伪元素渲染，而非 DOM 文本节点——
+            // 这样标签文字不可选中、不可复制、不会被搜索匹配
+            attrs['data-language'] = node.attrs.language || 'text';
             return [
               'pre',
-              mergeAttributes(this.options.HTMLAttributes, HTMLAttributes),
-              ['code', { class: node.attrs.language ? 'language-' + node.attrs.language : null }, 0],
-              ['span', { class: 'code-lang-tag', contenteditable: 'false' }, lang]
+              attrs,
+              ['code', { class: node.attrs.language ? 'language-' + node.attrs.language : null }, 0]
             ];
           }
         }).configure({ HTMLAttributes: { class: 'code-block' } }),
@@ -330,11 +332,12 @@ export function initEditor(app, editorElement, tabId) {
         console.log('Editor created successfully on #' + editorElement.id);
         if (!app.isEditorReady) {
           app.isEditorReady = true;
-          // 暴露自动检测方法给 file-ops 调用
-          app.autoDetectLanguages = function() {
-            autoDetectCodeLanguages(editorInstance);
-          };
         }
+        // 每个标签页的编辑器实例都有自己的自动检测入口——
+        // 通过 tabId 匹配确保始终操作当前活动标签的编辑器
+        editorInstance._autoDetect = function() {
+          autoDetectCodeLanguages(editorInstance);
+        };
       },
       onUpdate: ({ editor }) => {
         if (tabId && app.activeTabId !== tabId) return;

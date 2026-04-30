@@ -184,7 +184,9 @@ export function initTableOverlay(app) {
 export function updateTableControls(app) {
   if (!app._tableOverlay) return;
 
-  var editorEl = app.getActiveTab ? (app.getActiveTab().editorEl || document.getElementById('editor-container')) : document.getElementById('editor');
+  var activeTab = app.getActiveTab ? app.getActiveTab() : null;
+  var editorEl = activeTab ? activeTab.editorEl : document.getElementById('editor-container');
+  if (!editorEl) return;
   const container = document.getElementById('editor-container');
   if (!editorEl || !container) return;
 

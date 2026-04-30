@@ -20,9 +20,9 @@ export function setFileContent(app, tab, content) {
     } else {
       tab.editor.commands.setContent(marked.parse(content || ''));
     }
-    // 立即检测代码块语言
+    // 立即检测代码块语言（使用当前标签编辑器的实例方法）
     clearTimeout(app._autoDetectTimer);
-    if (app.autoDetectLanguages) app.autoDetectLanguages();
+    if (tab.editor && tab.editor._autoDetect) tab.editor._autoDetect();
   } catch (error) {
     console.error('Failed to set content:', error);
   } finally {

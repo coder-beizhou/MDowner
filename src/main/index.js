@@ -132,9 +132,13 @@ async function createWindow() {
     e.preventDefault();
     var unsaved = null;
     try {
-      unsaved = await mainWindow.webContents.executeJavaScript(
-        '(function(){var app=window.mdownerApp;if(!app||!app.tabs)return[];return app.tabs.filter(function(t){return t.isModified}).map(function(t){return{id:t.id,fileName:t.fileName,filePath:t.filePath}});})()'
-      );
+      // 2 秒超时，防止渲染进程卡死导致窗口永远关不掉
+      unsaved = await Promise.race([
+        mainWindow.webContents.executeJavaScript(
+          '(function(){var app=window.mdownerApp;if(!app||!app.tabs)return[];return app.tabs.filter(function(t){return t.isModified}).map(function(t){return{id:t.id,fileName:t.fileName,filePath:t.filePath}});})()'
+        ),
+        new Promise(function(r) { setTimeout(function() { r(null); }, 2000); })
+      ]);
     } catch(ex) {}
 
     if (!unsaved || unsaved.length === 0) {
@@ -438,11 +442,11 @@ function registerIPCHandlers() {
       const puppeteer = require('puppeteer-core');
       
       // 尝试查找Chrome可执行文件
-      const chromePaths = [
+      var chromePaths = [
         'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-        process.env.CHROME_PATH
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
       ];
+      if (process.env.CHROME_PATH) chromePaths.push(process.env.CHROME_PATH);
       
       let executablePath = null;
       for (const chromePath of chromePaths) {
@@ -739,7 +743,7 @@ function registerIPCHandlers() {
   ipcMain.on('write-and-close', async (_, filePath, content) => {
     try {
       await fsPromises.writeFile(filePath, content, 'utf-8');
-      isModified = false;
+      if (activeTabInfo) activeTabInfo.isModified = false;
       updateTitle();
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.destroy();

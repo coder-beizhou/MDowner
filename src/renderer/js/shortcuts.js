@@ -67,19 +67,26 @@ export function initDragDrop(app) {
     if (pm) pm.style.pointerEvents = '';
   }
 
+  function isFileDrag(e) {
+    return e.dataTransfer && e.dataTransfer.types && Array.prototype.indexOf.call(e.dataTransfer.types, 'Files') !== -1;
+  }
+
   document.addEventListener("dragenter", function(e) {
+    if (!isFileDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
     showIndicator();
   });
 
   document.addEventListener("dragleave", function(e) {
+    if (!isFileDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
     if (!e.relatedTarget) hideIndicator();
   });
 
   document.addEventListener("dragover", function(e) {
+    if (!isFileDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
   });

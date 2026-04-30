@@ -219,11 +219,15 @@ export async function insertImage(app) {
 }
 
 export function initImagePaste(app) {
-  const editorEl = document.getElementById('editor');
-  if (!editorEl) return;
+  const container = document.getElementById('editor-container');
+  if (!container) return;
 
-  editorEl.addEventListener('paste', (e) => {
+  container.addEventListener('paste', (e) => {
     if (!app.editor || !app.isEditorReady) return;
+    // 确保粘贴事件来自活动编辑器的 ProseMirror
+    var activeTab = app.getActiveTab ? app.getActiveTab() : null;
+    var pm = activeTab ? activeTab.editorEl.querySelector('.ProseMirror') : null;
+    if (!pm || !pm.contains(document.activeElement)) return;
     const items = e.clipboardData?.items;
     if (!items) return;
     for (const item of items) {

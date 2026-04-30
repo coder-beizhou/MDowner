@@ -1,6 +1,6 @@
 {
   "name": "mdowner",
-  "version": "2.3.2",
+  "version": "2.3.3",
   "description": "A Typora-like Markdown editor for Windows",
   "main": "src/main/index.js",
   "type": "commonjs",

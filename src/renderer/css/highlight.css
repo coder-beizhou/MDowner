@@ -59,8 +59,12 @@ pre code.hljs{display:block;overflow-x:auto;padding:1em}
 [data-theme="dark"] .hljs-punctuation{color:#c9d1d9}
 [data-theme="dark"] .hljs-doctag{color:#ff7b72}
 
-/* 代码块语言标签 */
-.code-lang-tag {
+/* 代码块语言标签（伪元素渲染——不可选中、不可复制） */
+pre[data-language] {
+  position: relative;
+}
+pre[data-language]::after {
+  content: attr(data-language);
   position: absolute;
   top: 4px;
   right: 8px;
@@ -73,7 +77,6 @@ pre code.hljs{display:block;overflow-x:auto;padding:1em}
   text-align: center;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   pointer-events: none;
-  user-select: none;
 }
 
 /* 代码块打印样式 */

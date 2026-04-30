@@ -1,6 +1,10 @@
 // UI：主题、侧边栏、大纲、状态栏、配置应用
 import { saveConfig } from './config.js';
 
+function escapeHTML(str) {
+  return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 export function applyTheme(app, theme) {
   app.config.theme = theme;
   document.documentElement.setAttribute('data-theme', theme);
@@ -63,9 +67,9 @@ export function updateOutline(app) {
     return;
   }
 
-  outline.innerHTML = headings.map(h => `
-    <div class="outline-item" data-level="${h.level}" data-pos="${h.pos}">${h.text}</div>
-  `).join('');
+  outline.innerHTML = headings.map(function(h) {
+    return '<div class="outline-item" data-level="' + h.level + '" data-pos="' + h.pos + '">' + escapeHTML(h.text) + '</div>';
+  }).join('');
 
   outline.querySelectorAll('.outline-item').forEach(item => {
     item.addEventListener('click', () => {
@@ -100,13 +104,14 @@ export function updateStatusBar(app) {
 }
 
 export function applyConfig(app) {
-  const editorElement = document.getElementById('editor');
-  if (editorElement) {
-    editorElement.style.fontSize = `${app.config.fontSize}px`;
-    editorElement.style.lineHeight = app.config.lineHeight.toString();
+  // 应用到所有标签页的编辑器
+  var editors = document.querySelectorAll('.tab-editor');
+  for (var i = 0; i < editors.length; i++) {
+    editors[i].style.fontSize = app.config.fontSize + 'px';
+    editors[i].style.lineHeight = app.config.lineHeight.toString();
   }
   if (!app.config.sidebarVisible) {
-    const sidebar = document.getElementById('sidebar');
+    var sidebar = document.getElementById('sidebar');
     if (sidebar) sidebar.classList.add('hidden');
   }
 }
