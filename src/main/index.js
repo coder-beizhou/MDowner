@@ -441,10 +441,22 @@ function registerIPCHandlers() {
     try {
       const puppeteer = require('puppeteer-core');
       
-      // 尝试查找Chrome可执行文件
-      var chromePaths = [
+      // 跨平台 Chrome/Chromium 路径查找
+      var chromePaths = process.platform === 'darwin' ? [
+        '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        path.join(require('os').homedir(), 'Applications/Google Chrome.app/Contents/MacOS/Google Chrome'),
+        '/Applications/Chromium.app/Contents/MacOS/Chromium',
+        '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'
+      ] : process.platform === 'linux' ? [
+        '/usr/bin/google-chrome',
+        '/usr/bin/chromium-browser',
+        '/usr/bin/chromium',
+        '/snap/bin/chromium'
+      ] : [
         'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        path.join(process.env.LOCALAPPDATA || '', 'Google\\Chrome\\Application\\chrome.exe'),
+        path.join(process.env['ProgramFiles'] || '', 'Microsoft\\Edge\\Application\\msedge.exe')
       ];
       if (process.env.CHROME_PATH) chromePaths.push(process.env.CHROME_PATH);
       
