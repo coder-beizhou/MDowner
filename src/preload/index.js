@@ -4,7 +4,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
   // 系统
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
-  showContextMenu: (hasSelection, linkUrl) => ipcRenderer.invoke('show-context-menu', hasSelection, linkUrl),
+  showContextMenu: (hasSelection, linkUrl, inTable) => ipcRenderer.invoke('show-context-menu', hasSelection, linkUrl, inTable),
 
   // 文件操作
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getContent: () => ipcRenderer.invoke('get-content'),
   getDraftPath: (tabId) => ipcRenderer.invoke('get-draft-path', tabId),
   saveFile: (filePath, htmlContent) => ipcRenderer.invoke('save-file', filePath, htmlContent),
+  showSaveDialog: (fileName) => ipcRenderer.invoke('show-save-dialog', fileName),
+  showTabMenu: () => ipcRenderer.invoke('show-tab-menu'),
   generatePDF: (pdfPath, htmlContent) => ipcRenderer.invoke('generate-pdf', pdfPath, htmlContent),
 
   // 事件监听（绑定前先移除旧监听器，防止重复绑定）
@@ -50,6 +52,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onExportPDF: (callback) => {
     ipcRenderer.removeAllListeners('export-pdf');
     ipcRenderer.on('export-pdf', (event, path) => callback(path));
+  },
+  onExportDOCX: (callback) => {
+    ipcRenderer.removeAllListeners('export-docx');
+    ipcRenderer.on('export-docx', (event, path) => callback(path));
   },
   // 标签页
   onNextTab: (callback) => {

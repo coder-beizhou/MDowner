@@ -6,7 +6,7 @@
 }
 
 .tab-editor {
-  max-width: 800px;
+  max-width: 1100px;
   margin: 0 auto;
   min-height: calc(100vh - var(--toolbar-height) - var(--tab-height) - var(--statusbar-height) - 80px);
 }
@@ -210,21 +210,69 @@
   outline: 3px solid var(--accent-color);
 }
 
-/* 表格 */
+/* 表格容器 —— 列数过多时出现横向滚动条 */
+.tableWrapper {
+  overflow-x: auto;
+  overflow-y: visible;
+  max-width: 100%;
+  margin: 1em 0;
+}
+.tableWrapper.table-align-center {
+  width: fit-content !important;
+  max-width: 100% !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  float: none !important;
+  display: block !important;
+}
+.tableWrapper.table-align-right {
+  width: fit-content !important;
+  max-width: 100% !important;
+  margin-left: auto !important;
+  margin-right: 0 !important;
+  float: none !important;
+  display: block !important;
+}
+
 .ProseMirror table {
   border-collapse: collapse;
-  margin: 1em 0;
-  width: 100%;
-  overflow: hidden;
+  margin: 0;
+  table-layout: auto;
 }
 
 .ProseMirror table td,
 .ProseMirror table th {
+  position: relative;
   border: 1px solid var(--table-border);
   padding: 0.5em 0.75em;
   text-align: left;
   vertical-align: top;
   min-width: 80px;
+  max-width: 300px;
+  word-break: break-word;
+}
+
+/* 列拖拽手柄——细线 */
+.ProseMirror table .column-resize-handle {
+  position: absolute;
+  right: -1px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background-color: var(--accent-color);
+  cursor: col-resize;
+  z-index: 1;
+}
+.ProseMirror table .column-resize-handle::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: -3px;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 16px;
+  background-color: var(--accent-color);
+  border-radius: 2px;
 }
 
 .ProseMirror table th {
@@ -233,37 +281,15 @@
 }
 
 .ProseMirror table .selectedCell {
-  background-color: rgba(26, 115, 232, 0.1);
-}
-
-.ProseMirror table .column-resize-handle {
-  position: absolute;
-  right: -2px;
-  top: 0;
-  bottom: 0;
-  width: 4px;
-  background-color: var(--accent-color);
-  pointer-events: none;
-}
-
-.ProseMirror table .column-resize-handle::before {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: -2px;
-  transform: translateY(-50%);
-  width: 8px;
-  height: 20px;
-  background-color: var(--accent-color);
-  border-radius: 2px;
+  background-color: rgba(139, 92, 246, 0.1);
 }
 
 /* 表格选中列 */
 .ProseMirror .selectedColumn {
-  background-color: rgba(26, 115, 232, 0.1);
+  background-color: rgba(139, 92, 246, 0.1);
 }
 
-/* 表格内联控件按钮（位于 overlay 层，不修改 ProseMirror DOM） */
+/* 表格内联控件按钮（overlay 层，hover 渐显） */
 .table-ctrl-btn {
   position: absolute;
   width: 20px;
@@ -279,9 +305,11 @@
   padding: 0;
   user-select: none;
   pointer-events: auto;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  opacity: 0.25;
+  transition: opacity 0.2s, color 0.15s, border-color 0.15s, background 0.15s;
 }
 .table-ctrl-btn:hover {
+  opacity: 1;
   color: var(--accent-color);
   border-color: var(--accent-color);
   background: var(--bg-secondary);
@@ -290,10 +318,6 @@
 .table-ctrl-del-col {
   background: var(--bg-secondary);
   border-color: transparent;
-}
-.table-ctrl-del-row:hover,
-.table-ctrl-del-col:hover {
-  border-color: var(--accent-color);
 }
 
 /* 删除整表按钮 */
@@ -310,6 +334,12 @@
   background: #e04040;
   color: #fff;
   border-color: #e04040;
+  opacity: 1;
+}
+
+/* 表格对齐按钮 */
+.table-align-btn {
+  font-size: 12px;
 }
 
 /* 占位符 */

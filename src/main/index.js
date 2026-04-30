@@ -183,7 +183,13 @@ function createMenu() {
           accelerator: 'CmdOrCtrl+Shift+P',
           click: () => exportPDF()
         },
-        { type: 'separator' },
+        // TODO: DOCX 导出待完善
+        // {
+        //   label: '导出DOCX',
+        //   accelerator: 'CmdOrCtrl+Shift+D',
+        //   click: () => exportDOCX()
+        // },
+        // { type: 'separator' },
         {
           label: '退出',
           accelerator: 'Alt+F4',
@@ -346,6 +352,20 @@ async function exportPDF() {
   }
 }
 
+// 导出DOCX
+async function exportDOCX() {
+  const result = await dialog.showSaveDialog(mainWindow, {
+    filters: [
+      { name: 'Word文档', extensions: ['docx'] }
+    ],
+    defaultPath: activeTabInfo.filePath ? activeTabInfo.filePath.replace('.md', '.docx') : '未命名.docx'
+  });
+
+  if (!result.canceled && result.filePath) {
+    safeSend('export-docx', result.filePath);
+  }
+}
+
 // 更新窗口标题
 function updateTitle() {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -436,8 +456,8 @@ function registerIPCHandlers() {
     }
   });
 
-  // 右键上下文菜单
-  ipcMain.handle('show-context-menu', async (_, hasSelection, linkUrl) => {
+  // 右键上下文菜单（第三个参数 inTable 表示鼠标在表格内）
+  ipcMain.handle('show-context-menu', async (_, hasSelection, linkUrl, inTable) => {
     if (!mainWindow || mainWindow.isDestroyed()) return null;
     return new Promise(resolve => {
       const template = [];
@@ -448,6 +468,36 @@ function registerIPCHandlers() {
           { label: '打开链接', click: () => resolve('open-link') },
           { label: '复制链接地址', click: () => resolve('copy-link') },
           { label: '取消链接', click: () => resolve('unlink') },
+          { type: 'separator' }
+        );
+      }
+
+      // 表格专属操作
+      if (inTable) {
+        var makeInsertSubmenu = function(baseLabel, actionPrefix) {
+          return {
+            label: baseLabel,
+            submenu: [
+              { label: '1', click: function() { resolve(actionPrefix + ':1'); } },
+              { label: '2', click: function() { resolve(actionPrefix + ':2'); } },
+              { label: '3', click: function() { resolve(actionPrefix + ':3'); } },
+              { label: '5', click: function() { resolve(actionPrefix + ':5'); } },
+              { label: '10', click: function() { resolve(actionPrefix + ':10'); } },
+              { type: 'separator' },
+              { label: '自定义...', click: function() { resolve(actionPrefix + ':0'); } }
+            ]
+          };
+        };
+        template.push(
+          makeInsertSubmenu('上方插入行', 'add-row-before'),
+          makeInsertSubmenu('下方插入行', 'add-row-after'),
+          { label: '删除当前行', click: () => resolve('del-row') },
+          { type: 'separator' },
+          makeInsertSubmenu('左侧插入列', 'add-col-before'),
+          makeInsertSubmenu('右侧插入列', 'add-col-after'),
+          { label: '删除当前列', click: () => resolve('del-col') },
+          { type: 'separator' },
+          { label: '删除整表', click: () => resolve('del-table') },
           { type: 'separator' }
         );
       }
@@ -465,6 +515,35 @@ function registerIPCHandlers() {
 
       const menu = Menu.buildFromTemplate(template);
       menu.popup({ window: mainWindow, callback: () => resolve(null) });
+    });
+  });
+
+  // 关闭标签时保存确认弹窗
+  ipcMain.handle('show-save-dialog', async (_, fileName) => {
+    var result = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      buttons: ['保存', '不保存', '取消'],
+      defaultId: 0,
+      cancelId: 2,
+      title: '保存更改',
+      message: '「' + fileName + '」有未保存的更改，是否保存？'
+    });
+    return result.response;
+  });
+
+  // 标签栏右键菜单
+  ipcMain.handle('show-tab-menu', async () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return null;
+    return new Promise(function(resolve) {
+      var template = [
+        { label: '关闭标签', click: function() { resolve('close'); } },
+        { label: '关闭其他标签', click: function() { resolve('close-others'); } },
+        { label: '关闭已保存的标签', click: function() { resolve('close-saved'); } },
+        { type: 'separator' },
+        { label: '关闭所有标签', click: function() { resolve('close-all'); } }
+      ];
+      var menu = Menu.buildFromTemplate(template);
+      menu.popup({ window: mainWindow, callback: function() { resolve(null); } });
     });
   });
 

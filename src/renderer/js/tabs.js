@@ -90,16 +90,33 @@ export function switchTab(app, tabId) {
 }
 
 // 关闭标签
-export function closeTab(app, tabId) {
+export async function closeTab(app, tabId) {
   var tab = app.tabs.find(function(t) { return t.id === tabId; });
   if (!tab) return;
 
-  // 提示保存
-  if (tab.isModified && tab.filePath) {
-    // 自动保存有路径的已修改标签
-    if (window.electronAPI) {
-      window.electronAPI.saveFile(tab.filePath, tab.editor.getHTML());
+  // 弹窗确认保存
+  if (tab.isModified && window.electronAPI) {
+    var response = await window.electronAPI.showSaveDialog(tab.fileName);
+    if (response === 0) {
+      // 保存
+      if (tab.filePath) {
+        await window.electronAPI.saveFile(tab.filePath, tab.editor.getHTML());
+      } else {
+        // 无路径，触发另存为
+        var saveResult = await window.electronAPI.saveFileDialog({
+          filters: [{ name: 'Markdown文件', extensions: ['md'] }],
+          defaultPath: tab.fileName
+        });
+        if (saveResult.canceled || !saveResult.filePath) return;
+        await window.electronAPI.saveFile(saveResult.filePath, tab.editor.getHTML());
+        tab.filePath = saveResult.filePath;
+        tab.fileName = saveResult.filePath.split(/[/\\]/).pop();
+      }
+      tab.isModified = false;
+    } else if (response === 2) {
+      return; // 取消
     }
+    // response === 1: 不保存，继续关闭
   }
 
   // 销毁编辑器
@@ -194,6 +211,13 @@ export function updateTabBar(app) {
       }
     });
 
+    // 右键菜单
+    item.addEventListener('contextmenu', function(e) {
+      e.preventDefault();
+      app._contextTabId = tab.id;
+      handleTabMenu(app);
+    });
+
     // 关闭按钮
     close.addEventListener('mousedown', function(e) {
       e.stopPropagation();
@@ -202,10 +226,91 @@ export function updateTabBar(app) {
     });
   });
 
+  // 标签栏空白区右键菜单
+  var tabBar = document.getElementById('tab-bar');
+  if (tabBar) {
+    tabBar.addEventListener('contextmenu', function(e) {
+      if (e.target.closest('.tab-item')) return; // 标签上的右键由 tab item 处理
+      e.preventDefault();
+      app._contextTabId = null;
+      handleTabMenu(app);
+    });
+  }
+
   // 新建标签按钮
   var newBtn = document.getElementById('tab-new');
   if (newBtn) {
     newBtn.onclick = function() { createTab(app); };
+  }
+}
+
+// 标签右键菜单处理
+async function handleTabMenu(app) {
+  if (!window.electronAPI || !window.electronAPI.showTabMenu) return;
+  var action = await window.electronAPI.showTabMenu();
+  if (!action) return;
+
+  if (action === 'close') {
+    var tabId = app._contextTabId || (getActiveTab(app) ? getActiveTab(app).id : null);
+    if (tabId) closeTab(app, tabId);
+  } else if (action === 'close-others') {
+    var keepId = app._contextTabId || (getActiveTab(app) ? getActiveTab(app).id : null);
+    closeOtherTabs(app, keepId);
+  } else if (action === 'close-saved') {
+    closeSavedTabs(app);
+  } else if (action === 'close-all') {
+    closeAllTabs(app);
+  }
+  app._contextTabId = null;
+}
+
+// 关闭其他标签
+async function closeOtherTabs(app, keepId) {
+  var toClose = app.tabs.filter(function(t) { return t.id !== keepId; });
+  // 先关未修改的，修改的倒序关（避免索引偏移问题）
+  for (var i = toClose.length - 1; i >= 0; i--) {
+    if (!toClose[i].isModified) {
+      await closeTabSilent(app, toClose[i].id);
+      toClose.splice(i, 1);
+    }
+  }
+  for (var j = toClose.length - 1; j >= 0; j--) {
+    await closeTab(app, toClose[j].id);
+  }
+}
+
+// 关闭已保存标签
+async function closeSavedTabs(app) {
+  var toClose = app.tabs.filter(function(t) { return !t.isModified && t.filePath; });
+  for (var i = toClose.length - 1; i >= 0; i--) {
+    await closeTabSilent(app, toClose[i].id);
+  }
+}
+
+// 关闭所有标签
+async function closeAllTabs(app) {
+  var all = app.tabs.slice();
+  for (var i = all.length - 1; i >= 0; i--) {
+    await closeTab(app, all[i].id);
+  }
+}
+
+// 静默关闭（不弹保存窗，用于已保存/未修改标签）
+function closeTabSilent(app, tabId) {
+  var tab = app.tabs.find(function(t) { return t.id === tabId; });
+  if (!tab) return;
+  if (tab.editor) tab.editor.destroy();
+  if (tab.wrapperEl && tab.wrapperEl.parentNode) tab.wrapperEl.parentNode.removeChild(tab.wrapperEl);
+  var idx = app.tabs.indexOf(tab);
+  if (idx !== -1) app.tabs.splice(idx, 1);
+  if (app.tabs.length === 0) {
+    createTab(app);
+  } else if (app.activeTabId === tabId) {
+    var newIdx = Math.min(idx, app.tabs.length - 1);
+    if (app.tabs[newIdx]) switchTab(app, app.tabs[newIdx].id);
+  } else {
+    updateTabBar(app);
+    saveTabConfig(app);
   }
 }
 

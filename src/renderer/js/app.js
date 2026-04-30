@@ -5,7 +5,7 @@ import { initTableOverlay, updateTableControls, insertTable, insertHr, addTableR
 import { initShortcuts, initDragDrop } from './shortcuts.js';
 import { initContextMenu } from './context-menu.js';
 import { insertLink, insertImage, initImagePaste } from './dialogs.js';
-import { newFile, openFile, setFileContent, getContent, saveDraft, exportPDF } from './file-ops.js';
+import { newFile, openFile, setFileContent, getContent, saveDraft, exportPDF, exportDOCX } from './file-ops.js';
 import { applyTheme, toggleTheme, initSidebar, toggleSidebar, scheduleOutlineUpdate, updateOutline, initStatusBar, updateStatusBar, applyConfig } from './ui.js';
 import { loadConfig, saveConfig } from './config.js';
 import { initTabBar, createTab, switchTab, closeTab, getActiveTab, nextTab, prevTab, updateTabBar, notifyModified, saveTabConfig } from './tabs.js';
@@ -137,6 +137,7 @@ class MDownerApp {
   getContent() { var t = getActiveTab(this); return t ? getContent(this) : ''; }
   saveDraft() { return saveDraft(this); }
   exportPDF(p) { return exportPDF(this, p); }
+  exportDOCX(p) { return exportDOCX(this, p); }
   switchTab(id) { switchTab(this, id); }
   closeActiveTab() { var t = getActiveTab(this); if (t) closeTab(this, t.id); }
   nextTab() { nextTab(this); }
@@ -201,6 +202,7 @@ class MDownerApp {
     window.electronAPI.onToggleSidebar(function() { self.toggleSidebar(); });
     window.electronAPI.onToggleTheme(function() { self.toggleTheme(); });
     window.electronAPI.onExportPDF(function(path) { self.exportPDF(path); });
+    window.electronAPI.onExportDOCX(function(path) { self.exportDOCX(path); });
     window.electronAPI.onPrepareSave(function(filePath) {
       var t = getActiveTab(self);
       if (t && t.editor && window.electronAPI) {
@@ -265,15 +267,91 @@ class MDownerApp {
     }
   }
 
-  // 保存所有标签后关闭
+  // 关闭前逐个选择保存——自定义弹窗
   async saveAllTabsAndClose() {
     var self = this;
-    for (var i = 0; i < this.tabs.length; i++) {
-      var tab = this.tabs[i];
-      if (tab.isModified && tab.filePath) {
-        var html = tab.editor.getHTML();
-        await window.electronAPI.saveFile(tab.filePath, html);
-        tab.isModified = false;
+    var unsaved = this.tabs.filter(function(t) { return t.isModified; });
+    if (unsaved.length === 0) {
+      saveTabConfig(this);
+      window.electronAPI.allTabsSavedClose();
+      return;
+    }
+
+    // 收集勾选结果
+    var saveList = await new Promise(function(resolve) {
+      var overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
+
+      var dialog = document.createElement('div');
+      dialog.style.cssText = 'background:var(--bg-primary,#fff);border-radius:8px;padding:24px;min-width:420px;max-width:520px;max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.3);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;';
+
+      var title = document.createElement('h3');
+      title.textContent = '保存更改';
+      title.style.cssText = 'margin:0 0 4px;font-size:16px;color:var(--text-primary,#333);';
+
+      var sub = document.createElement('p');
+      sub.textContent = '勾选需要保存的标签页：';
+      sub.style.cssText = 'margin:0 0 16px;font-size:13px;color:var(--text-secondary,#666);';
+
+      dialog.appendChild(title);
+      dialog.appendChild(sub);
+
+      var items = [];
+      unsaved.forEach(function(tab) {
+        var label = document.createElement('label');
+        label.style.cssText = 'display:flex;align-items:center;padding:6px 0;font-size:14px;cursor:pointer;color:var(--text-primary,#333);';
+        var cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = true;
+        cb.style.cssText = 'margin-right:10px;width:16px;height:16px;accent-color:#8b5cf6;';
+        label.appendChild(cb);
+        var span = document.createElement('span');
+        span.textContent = tab.fileName;
+        span.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;';
+        label.appendChild(span);
+        dialog.appendChild(label);
+        items.push({ cb: cb, tab: tab });
+      });
+
+      var btns = document.createElement('div');
+      btns.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;margin-top:20px;';
+
+      function addBtn(text, primary, action) {
+        var btn = document.createElement('button');
+        btn.textContent = text;
+        btn.style.cssText = primary
+          ? 'padding:8px 20px;border-radius:4px;border:none;background:#8b5cf6;color:#fff;font-size:14px;cursor:pointer;'
+          : 'padding:8px 20px;border-radius:4px;border:1px solid var(--border-color,#ddd);background:transparent;color:var(--text-primary,#333);font-size:14px;cursor:pointer;';
+        btn.onclick = function() { document.body.removeChild(overlay); resolve(action); };
+        btn.onmouseenter = function() { if (!primary) btn.style.background = 'var(--bg-secondary,#f5f5f5)'; };
+        btn.onmouseleave = function() { if (!primary) btn.style.background = 'transparent'; };
+        return btn;
+      }
+
+      btns.appendChild(addBtn('取消', false, null));
+      btns.appendChild(addBtn('全部不保存', false, 'nosave'));
+      btns.appendChild(addBtn('保存选中', true, { items: items }));
+      dialog.appendChild(btns);
+      overlay.appendChild(dialog);
+      document.body.appendChild(overlay);
+
+      // ESC 取消
+      function onKey(e) { if (e.key === 'Escape') { document.body.removeChild(overlay); resolve(null); } }
+      document.addEventListener('keydown', onKey, { once: true });
+    });
+
+    if (!saveList) return; // 取消
+    if (saveList === 'nosave') { saveList = { items: [] }; }
+
+    // 保存勾选的标签
+    for (var i = 0; i < saveList.items.length; i++) {
+      var item = saveList.items[i];
+      if (item.cb.checked && item.tab.filePath) {
+        try {
+          var html = item.tab.editor.getHTML();
+          await window.electronAPI.saveFile(item.tab.filePath, html);
+          item.tab.isModified = false;
+        } catch(e) { console.error('Save failed:', item.tab.fileName, e); }
       }
     }
     updateTabBar(this);

@@ -37647,7 +37647,124 @@ img.ProseMirror-separator {
   // src/renderer/js/table.js
   function insertTable(app) {
     if (!app.editor || !app.isEditorReady) return;
-    app.editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+    showTableCreateDialog(app);
+  }
+  function showTableCreateDialog(app) {
+    var overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.4);z-index:9999;display:flex;align-items:center;justify-content:center;";
+    var dialog = document.createElement("div");
+    dialog.style.cssText = 'background:var(--bg-primary,#fff);border-radius:8px;padding:24px;width:280px;box-shadow:0 8px 32px rgba(0,0,0,0.3);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;';
+    var title = document.createElement("h3");
+    title.textContent = "\u63D2\u5165\u8868\u683C";
+    title.style.cssText = "margin:0 0 16px;font-size:16px;color:var(--text-primary,#333);";
+    function makeRow(label, id, val) {
+      var row = document.createElement("div");
+      row.style.cssText = "display:flex;align-items:center;margin-bottom:12px;";
+      var lbl = document.createElement("label");
+      lbl.textContent = label;
+      lbl.style.cssText = "flex:1;font-size:14px;color:var(--text-primary,#333);";
+      var input = document.createElement("input");
+      input.type = "number";
+      input.id = id;
+      input.min = "1";
+      input.max = "50";
+      input.value = val;
+      input.style.cssText = "width:70px;padding:4px 8px;border:1px solid var(--border-color,#ddd);border-radius:4px;font-size:14px;text-align:center;";
+      row.appendChild(lbl);
+      row.appendChild(input);
+      return row;
+    }
+    dialog.appendChild(title);
+    dialog.appendChild(makeRow("\u884C\u6570", "table-rows", "3"));
+    dialog.appendChild(makeRow("\u5217\u6570", "table-cols", "3"));
+    var btns = document.createElement("div");
+    btns.style.cssText = "display:flex;justify-content:flex-end;gap:8px;margin-top:8px;";
+    function addBtn(text, primary, action) {
+      var btn = document.createElement("button");
+      btn.textContent = text;
+      btn.style.cssText = primary ? "padding:8px 20px;border-radius:4px;border:none;background:#8b5cf6;color:#fff;font-size:14px;cursor:pointer;" : "padding:8px 20px;border-radius:4px;border:1px solid var(--border-color,#ddd);background:transparent;color:var(--text-primary,#333);font-size:14px;cursor:pointer;";
+      btn.onclick = action;
+      return btn;
+    }
+    var cancelBtn = addBtn("\u53D6\u6D88", false, function() {
+      document.body.removeChild(overlay);
+      document.removeEventListener("keydown", onKey);
+    });
+    var insertBtn = addBtn("\u63D2\u5165", true, function() {
+      var rows = Math.max(1, Math.min(50, parseInt(document.getElementById("table-rows").value) || 3));
+      var cols = Math.max(1, Math.min(50, parseInt(document.getElementById("table-cols").value) || 3));
+      document.body.removeChild(overlay);
+      document.removeEventListener("keydown", onKey);
+      app.editor.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run();
+    });
+    btns.appendChild(cancelBtn);
+    btns.appendChild(insertBtn);
+    dialog.appendChild(btns);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    function onKey(e) {
+      if (e.key === "Escape") {
+        document.body.removeChild(overlay);
+        document.removeEventListener("keydown", onKey);
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    overlay.addEventListener("click", function(e) {
+      if (e.target === overlay) {
+        document.body.removeChild(overlay);
+        document.removeEventListener("keydown", onKey);
+      }
+    });
+  }
+  function showInsertCountDialog(app, action, callback) {
+    var overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.3);z-index:9999;display:flex;align-items:center;justify-content:center;";
+    var dialog = document.createElement("div");
+    dialog.style.cssText = 'background:var(--bg-primary,#fff);border-radius:8px;padding:20px 24px;box-shadow:0 8px 32px rgba(0,0,0,0.3);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;text-align:center;';
+    var title = document.createElement("div");
+    title.textContent = action.indexOf("\u884C") !== -1 ? "\u63D2\u5165\u884C\u6570" : "\u63D2\u5165\u5217\u6570";
+    title.style.cssText = "font-size:14px;margin-bottom:12px;color:var(--text-primary,#333);";
+    var input = document.createElement("input");
+    input.type = "number";
+    input.value = "1";
+    input.min = "1";
+    input.max = "100";
+    input.style.cssText = "width:80px;padding:6px 8px;border:1px solid var(--border-color,#ddd);border-radius:4px;font-size:18px;text-align:center;";
+    var btns = document.createElement("div");
+    btns.style.cssText = "display:flex;justify-content:center;gap:8px;margin-top:14px;";
+    function makeBtn(text, primary, act) {
+      var btn = document.createElement("button");
+      btn.textContent = text;
+      btn.style.cssText = primary ? "padding:6px 20px;border-radius:4px;border:none;background:#8b5cf6;color:#fff;font-size:14px;cursor:pointer;" : "padding:6px 20px;border-radius:4px;border:1px solid var(--border-color,#ddd);background:transparent;color:var(--text-primary,#333);font-size:14px;cursor:pointer;";
+      btn.onclick = act;
+      return btn;
+    }
+    var doIt = function() {
+      var count = Math.max(1, Math.min(100, parseInt(input.value) || 1));
+      document.body.removeChild(overlay);
+      document.removeEventListener("keydown", onKey);
+      callback(count);
+    };
+    btns.appendChild(makeBtn("\u53D6\u6D88", false, function() {
+      document.body.removeChild(overlay);
+      document.removeEventListener("keydown", onKey);
+    }));
+    btns.appendChild(makeBtn("\u786E\u5B9A", true, doIt));
+    dialog.appendChild(title);
+    dialog.appendChild(input);
+    dialog.appendChild(btns);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    function onKey(e) {
+      if (e.key === "Escape") {
+        document.body.removeChild(overlay);
+        document.removeEventListener("keydown", onKey);
+      }
+      if (e.key === "Enter") doIt();
+    }
+    document.addEventListener("keydown", onKey);
+    input.focus();
+    input.select();
   }
   function insertHr(app) {
     if (!app.editor || !app.isEditorReady) return;
@@ -37699,57 +37816,40 @@ img.ProseMirror-separator {
     const wrappers = editorEl.querySelectorAll(".tableWrapper");
     const containerRect = container.getBoundingClientRect();
     let html2 = "";
-    var inTable = false;
+    var activeTableIdx = -1;
     if (app.editor && app.isEditorReady && wrappers.length > 0) {
-      for (var d = app.editor.state.selection.$anchor.depth; d >= 0; d--) {
-        if (app.editor.state.selection.$anchor.node(d).type.name === "table") {
-          inTable = true;
+      var $anchor = app.editor.state.selection.$anchor;
+      for (var d = $anchor.depth; d >= 0; d--) {
+        if ($anchor.node(d).type.name === "table") {
+          var tablePos = $anchor.start(d);
+          for (var w = 0; w < wrappers.length; w++) {
+            var tbl = wrappers[w].querySelector("table");
+            if (tbl) {
+              try {
+                var tblPos = app.editor.view.posAtDOM(tbl, 0);
+                if (tblPos === tablePos) {
+                  activeTableIdx = w;
+                  break;
+                }
+              } catch (_) {
+              }
+            }
+          }
           break;
         }
       }
     }
-    if (wrappers.length > 0 && inTable) {
-      wrappers.forEach((wrapper, tableIdx) => {
-        const tableEl = wrapper.querySelector("table");
+    if (activeTableIdx >= 0) {
+      (function() {
+        var wrapper = wrappers[activeTableIdx];
+        var tableEl = wrapper.querySelector("table");
         if (!tableEl) return;
-        const tableRect = tableEl.getBoundingClientRect();
-        const top = tableRect.top - containerRect.top + container.scrollTop;
-        const left = tableRect.left - containerRect.left + container.scrollLeft;
-        html2 += `<button class="table-ctrl-btn table-ctrl-del-table"
-      style="top:${top - 24}px;left:${left - 24}px"
-      data-action="delTable" data-table="${tableIdx}">\xD7</button>`;
-        const addRowTop = top + tableRect.height + 4;
-        const addRowLeft = left + tableRect.width / 2 - 10;
-        html2 += `<button class="table-ctrl-btn table-ctrl-add-row"
-      style="top:${addRowTop}px;left:${addRowLeft}px"
-      data-action="addRow" data-table="${tableIdx}">+</button>`;
-        const addColTop = top + tableRect.height / 2 - 10;
-        const addColLeft = left + tableRect.width + 4;
-        html2 += `<button class="table-ctrl-btn table-ctrl-add-col"
-      style="top:${addColTop}px;left:${addColLeft}px"
-      data-action="addCol" data-table="${tableIdx}">+</button>`;
-        const rows = tableEl.querySelectorAll("tr");
-        rows.forEach((tr2, rowIdx) => {
-          const rowRect = tr2.getBoundingClientRect();
-          const btnTop = rowRect.top - containerRect.top + container.scrollTop + rowRect.height / 2 - 8;
-          const btnLeft = left - 24;
-          html2 += `<button class="table-ctrl-btn table-ctrl-del-row"
-        style="top:${btnTop}px;left:${btnLeft}px"
-        data-action="delRow" data-table="${tableIdx}" data-row="${rowIdx}">\u2212</button>`;
-        });
-        const firstRow = tableEl.querySelector("tr");
-        if (firstRow) {
-          const firstRowCells = firstRow.querySelectorAll("td, th");
-          firstRowCells.forEach((cell, colIdx) => {
-            const cellRect = cell.getBoundingClientRect();
-            const btnTop = top - 24;
-            const btnLeft = cellRect.left - containerRect.left + container.scrollLeft + cellRect.width / 2 - 8;
-            html2 += `<button class="table-ctrl-btn table-ctrl-del-col"
-          style="top:${btnTop}px;left:${btnLeft}px"
-          data-action="delCol" data-table="${tableIdx}" data-col="${colIdx}">\u2212</button>`;
-          });
-        }
-      });
+        var tableRect = tableEl.getBoundingClientRect();
+        var top = tableRect.top - containerRect.top + container.scrollTop;
+        var left = tableRect.left - containerRect.left + container.scrollLeft;
+        var tw = tableRect.width;
+        html2 += '<button class="table-ctrl-btn table-ctrl-del-table" style="top:' + (top - 22) + "px;left:" + (left - 22) + 'px" data-action="delTable" data-table="' + activeTableIdx + '">\xD7</button>';
+      })();
     }
     app._tableOverlay.innerHTML = html2;
     app._tableOverlay.querySelectorAll(".table-ctrl-btn").forEach(function(btn) {
@@ -37759,23 +37859,28 @@ img.ProseMirror-separator {
         var tableIdx = parseInt(btn.dataset.table);
         var wrapperEl = wrappers[tableIdx];
         var tableEl = wrapperEl ? wrapperEl.querySelector("table") : null;
-        if (action === "addRow") {
-          focusLastCell(app, tableEl);
-          addTableRow(app);
-        } else if (action === "addCol") {
-          focusLastCell(app, tableEl);
-          addTableCol(app);
-        } else if (action === "delRow") {
-          var rowIdx = parseInt(btn.dataset.row);
-          var rowEl = tableEl ? tableEl.querySelectorAll("tr")[rowIdx] : null;
-          if (rowEl) focusAndDeleteRow(app, rowEl);
-        } else if (action === "delCol") {
-          var colIdx = parseInt(btn.dataset.col);
-          var firstRow = tableEl ? tableEl.querySelector("tr") : null;
-          var cellEl = firstRow ? firstRow.querySelectorAll("td, th")[colIdx] : null;
-          if (cellEl) focusAndDeleteCol(app, cellEl);
-        } else if (action === "delTable") {
+        if (action === "delTable") {
           deleteTableAt(app, tableEl);
+          setTimeout(function() {
+            if (app.editor) app.editor.commands.focus();
+          }, 50);
+        } else if (action === "alignLeft" || action === "alignCenter" || action === "alignRight") {
+          var alignVal = action === "alignLeft" ? "left" : action === "alignCenter" ? "center" : "right";
+          var selCells = tableEl ? tableEl.querySelectorAll(".selectedCell") : [];
+          if (selCells.length > 0) {
+            selCells.forEach(function(cell) {
+              cell.style.textAlign = alignVal;
+            });
+          } else {
+            if (wrapperEl) {
+              wrapperEl.classList.remove("table-align-center", "table-align-right");
+              if (alignVal === "center") {
+                wrapperEl.classList.add("table-align-center");
+              } else if (alignVal === "right") {
+                wrapperEl.classList.add("table-align-right");
+              }
+            }
+          }
         }
       });
     });
@@ -37787,28 +37892,6 @@ img.ProseMirror-separator {
       const pos = app.editor.view.posAtDOM(cell, 0);
       app.editor.chain().setTextSelection(pos).deleteTable().run();
     }
-  }
-  function focusLastCell(app, tableEl) {
-    if (!app.editor || !app.isEditorReady || !tableEl) return;
-    const cells = tableEl.querySelectorAll("td, th");
-    const lastCell = cells[cells.length - 1];
-    if (lastCell) {
-      const pos = app.editor.view.posAtDOM(lastCell, 0);
-      app.editor.chain().setTextSelection(pos).run();
-    }
-  }
-  function focusAndDeleteRow(app, rowEl) {
-    if (!app.editor || !app.isEditorReady) return;
-    const cell = rowEl.querySelector("td, th");
-    if (cell) {
-      const pos = app.editor.view.posAtDOM(cell, 0);
-      app.editor.chain().setTextSelection(pos).deleteRow().run();
-    }
-  }
-  function focusAndDeleteCol(app, cellEl) {
-    if (!app.editor || !app.isEditorReady) return;
-    const pos = app.editor.view.posAtDOM(cellEl, 0);
-    app.editor.chain().setTextSelection(pos).deleteColumn().run();
   }
   var init_table = __esm({
     "src/renderer/js/table.js"() {
@@ -37906,13 +37989,42 @@ img.ProseMirror-separator {
     });
   }
   function initDragDrop(app) {
-    document.addEventListener("dragover", (e) => {
+    var dropIndicator = document.createElement("div");
+    dropIndicator.id = "drop-indicator";
+    dropIndicator.style.cssText = "display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(18,18,24,0.55);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);z-index:9999;pointer-events:none;";
+    var dropCard = document.createElement("div");
+    dropCard.innerHTML = '<div style="text-align:center;"><svg width="72" height="72" viewBox="0 0 72 72" style="display:block;margin:0 auto 20px;"><circle cx="36" cy="36" r="34" fill="none" stroke="var(--accent-color)" stroke-width="2" stroke-dasharray="8 6" opacity="0.6"/><circle cx="36" cy="36" r="34" fill="none" stroke="var(--accent-color)" stroke-width="2" stroke-dasharray="8 6" opacity="0.3" transform="rotate(30 36 36)"/><circle cx="36" cy="36" r="34" fill="none" stroke="var(--accent-color)" stroke-width="2" stroke-dasharray="8 6" opacity="0.15" transform="rotate(60 36 36)"/><line x1="36" y1="20" x2="36" y2="52" stroke="var(--accent-color)" stroke-width="3" stroke-linecap="round"/><line x1="20" y1="36" x2="52" y2="36" stroke="var(--accent-color)" stroke-width="3" stroke-linecap="round"/></svg><div style="font-size:16px;font-weight:500;color:rgba(255,255,255,0.85);letter-spacing:0.5px;">\u62D6\u653E Markdown \u6587\u4EF6\u5230\u6B64\u5904</div></div>';
+    dropCard.style.cssText = "position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);";
+    dropIndicator.appendChild(dropCard);
+    document.body.appendChild(dropIndicator);
+    function showIndicator() {
+      dropIndicator.style.display = "";
+      var pm = document.querySelector(".ProseMirror");
+      if (pm) pm.style.pointerEvents = "none";
+    }
+    function hideIndicator() {
+      dropIndicator.style.display = "none";
+      var pm = document.querySelector(".ProseMirror");
+      if (pm) pm.style.pointerEvents = "";
+    }
+    document.addEventListener("dragenter", function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      showIndicator();
+    });
+    document.addEventListener("dragleave", function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!e.relatedTarget) hideIndicator();
+    });
+    document.addEventListener("dragover", function(e) {
       e.preventDefault();
       e.stopPropagation();
     });
-    document.addEventListener("drop", (e) => {
+    document.addEventListener("drop", function(e) {
       e.preventDefault();
       e.stopPropagation();
+      hideIndicator();
       const files = Array.from(e.dataTransfer.files);
       if (files.length > 0) {
         const paths = files.map((f) => f.path);
@@ -37927,7 +38039,7 @@ img.ProseMirror-separator {
 
   // src/renderer/js/context-menu.js
   function initContextMenu(app) {
-    const editorEl = document.getElementById("editor");
+    const editorEl = document.getElementById("editor-container");
     if (!editorEl || !window.electronAPI) return;
     const findLink = (target) => {
       const link2 = target.closest("a");
@@ -37963,6 +38075,20 @@ img.ProseMirror-separator {
         e.stopImmediatePropagation();
       }
     }, true);
+    function isInTable2() {
+      if (!app.editor) return false;
+      var $anchor = app.editor.state.selection.$anchor;
+      for (var d = $anchor.depth; d >= 0; d--) {
+        if ($anchor.node(d).type.name === "table") return true;
+      }
+      return false;
+    }
+    editorEl.addEventListener("mousedown", function(e) {
+      if (e.button === 2) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    }, true);
     editorEl.addEventListener("contextmenu", async (e) => {
       if (e.ctrlKey) {
         const url = findLink(e.target);
@@ -37977,7 +38103,8 @@ img.ProseMirror-separator {
       e.stopPropagation();
       const hasSelection2 = app.editor && !app.editor.state.selection.empty;
       const linkUrl = findLink(e.target);
-      const action = await window.electronAPI.showContextMenu(hasSelection2, linkUrl);
+      const inTable = isInTable2();
+      const action = await window.electronAPI.showContextMenu(hasSelection2, linkUrl, inTable);
       if (!action || !app.editor) return;
       if (action === "open-link" && linkUrl) {
         window.electronAPI.openExternal(linkUrl);
@@ -37991,6 +38118,82 @@ img.ProseMirror-separator {
       if (action === "unlink") {
         app.editor.chain().focus().extendMarkRange("link").unsetLink().run();
         return;
+      }
+      if (inTable) {
+        let insertMultiple = function(chainFn, count) {
+          var chain = app.editor.chain().focus();
+          for (var i = 0; i < count; i++) chainFn(chain);
+          chain.run();
+        };
+        var parts = (action || "").split(":");
+        var cmd = parts[0];
+        var cnt = parseInt(parts[1]) || 0;
+        switch (cmd) {
+          case "del-row":
+            app.editor.chain().focus().deleteRow().run();
+            return;
+          case "del-col":
+            app.editor.chain().focus().deleteColumn().run();
+            return;
+          case "del-table":
+            app.editor.chain().focus().deleteTable().run();
+            setTimeout(function() {
+              if (app.editor) app.editor.commands.focus();
+            }, 50);
+            return;
+          case "add-row-before":
+            if (cnt === 0) {
+              showInsertCountDialog(app, "\u884C", function(c) {
+                insertMultiple(function(ch) {
+                  ch.addRowBefore();
+                }, c);
+              });
+            } else {
+              insertMultiple(function(ch) {
+                ch.addRowBefore();
+              }, cnt);
+            }
+            return;
+          case "add-row-after":
+            if (cnt === 0) {
+              showInsertCountDialog(app, "\u884C", function(c) {
+                insertMultiple(function(ch) {
+                  ch.addRowAfter();
+                }, c);
+              });
+            } else {
+              insertMultiple(function(ch) {
+                ch.addRowAfter();
+              }, cnt);
+            }
+            return;
+          case "add-col-before":
+            if (cnt === 0) {
+              showInsertCountDialog(app, "\u5217", function(c) {
+                insertMultiple(function(ch) {
+                  ch.addColumnBefore();
+                }, c);
+              });
+            } else {
+              insertMultiple(function(ch) {
+                ch.addColumnBefore();
+              }, cnt);
+            }
+            return;
+          case "add-col-after":
+            if (cnt === 0) {
+              showInsertCountDialog(app, "\u5217", function(c) {
+                insertMultiple(function(ch) {
+                  ch.addColumnAfter();
+                }, c);
+              });
+            } else {
+              insertMultiple(function(ch) {
+                ch.addColumnAfter();
+              }, cnt);
+            }
+            return;
+        }
       }
       switch (action) {
         case "undo":
@@ -38016,6 +38219,7 @@ img.ProseMirror-separator {
   }
   var init_context_menu = __esm({
     "src/renderer/js/context-menu.js"() {
+      init_table();
     }
   });
 
@@ -40431,14 +40635,29 @@ ${content}</tr>
     app.updateTableControls();
     notifyMain(app);
   }
-  function closeTab(app, tabId) {
+  async function closeTab(app, tabId) {
     var tab = app.tabs.find(function(t) {
       return t.id === tabId;
     });
     if (!tab) return;
-    if (tab.isModified && tab.filePath) {
-      if (window.electronAPI) {
-        window.electronAPI.saveFile(tab.filePath, tab.editor.getHTML());
+    if (tab.isModified && window.electronAPI) {
+      var response = await window.electronAPI.showSaveDialog(tab.fileName);
+      if (response === 0) {
+        if (tab.filePath) {
+          await window.electronAPI.saveFile(tab.filePath, tab.editor.getHTML());
+        } else {
+          var saveResult = await window.electronAPI.saveFileDialog({
+            filters: [{ name: "Markdown\u6587\u4EF6", extensions: ["md"] }],
+            defaultPath: tab.fileName
+          });
+          if (saveResult.canceled || !saveResult.filePath) return;
+          await window.electronAPI.saveFile(saveResult.filePath, tab.editor.getHTML());
+          tab.filePath = saveResult.filePath;
+          tab.fileName = saveResult.filePath.split(/[/\\]/).pop();
+        }
+        tab.isModified = false;
+      } else if (response === 2) {
+        return;
       }
     }
     if (tab.editor) {
@@ -40507,17 +40726,95 @@ ${content}</tr>
           closeTab(app, tab.id);
         }
       });
+      item.addEventListener("contextmenu", function(e) {
+        e.preventDefault();
+        app._contextTabId = tab.id;
+        handleTabMenu(app);
+      });
       close2.addEventListener("mousedown", function(e) {
         e.stopPropagation();
         e.preventDefault();
         closeTab(app, tab.id);
       });
     });
+    var tabBar = document.getElementById("tab-bar");
+    if (tabBar) {
+      tabBar.addEventListener("contextmenu", function(e) {
+        if (e.target.closest(".tab-item")) return;
+        e.preventDefault();
+        app._contextTabId = null;
+        handleTabMenu(app);
+      });
+    }
     var newBtn = document.getElementById("tab-new");
     if (newBtn) {
       newBtn.onclick = function() {
         createTab(app);
       };
+    }
+  }
+  async function handleTabMenu(app) {
+    if (!window.electronAPI || !window.electronAPI.showTabMenu) return;
+    var action = await window.electronAPI.showTabMenu();
+    if (!action) return;
+    if (action === "close") {
+      var tabId = app._contextTabId || (getActiveTab(app) ? getActiveTab(app).id : null);
+      if (tabId) closeTab(app, tabId);
+    } else if (action === "close-others") {
+      var keepId = app._contextTabId || (getActiveTab(app) ? getActiveTab(app).id : null);
+      closeOtherTabs(app, keepId);
+    } else if (action === "close-saved") {
+      closeSavedTabs(app);
+    } else if (action === "close-all") {
+      closeAllTabs(app);
+    }
+    app._contextTabId = null;
+  }
+  async function closeOtherTabs(app, keepId) {
+    var toClose = app.tabs.filter(function(t) {
+      return t.id !== keepId;
+    });
+    for (var i = toClose.length - 1; i >= 0; i--) {
+      if (!toClose[i].isModified) {
+        await closeTabSilent(app, toClose[i].id);
+        toClose.splice(i, 1);
+      }
+    }
+    for (var j = toClose.length - 1; j >= 0; j--) {
+      await closeTab(app, toClose[j].id);
+    }
+  }
+  async function closeSavedTabs(app) {
+    var toClose = app.tabs.filter(function(t) {
+      return !t.isModified && t.filePath;
+    });
+    for (var i = toClose.length - 1; i >= 0; i--) {
+      await closeTabSilent(app, toClose[i].id);
+    }
+  }
+  async function closeAllTabs(app) {
+    var all = app.tabs.slice();
+    for (var i = all.length - 1; i >= 0; i--) {
+      await closeTab(app, all[i].id);
+    }
+  }
+  function closeTabSilent(app, tabId) {
+    var tab = app.tabs.find(function(t) {
+      return t.id === tabId;
+    });
+    if (!tab) return;
+    if (tab.editor) tab.editor.destroy();
+    if (tab.wrapperEl && tab.wrapperEl.parentNode) tab.wrapperEl.parentNode.removeChild(tab.wrapperEl);
+    var idx = app.tabs.indexOf(tab);
+    if (idx !== -1) app.tabs.splice(idx, 1);
+    if (app.tabs.length === 0) {
+      createTab(app);
+    } else if (app.activeTabId === tabId) {
+      var newIdx = Math.min(idx, app.tabs.length - 1);
+      if (app.tabs[newIdx]) switchTab(app, app.tabs[newIdx].id);
+    } else {
+      updateTabBar(app);
+      saveTabConfig(app);
     }
   }
   function notifyMain(app) {
@@ -40589,25 +40886,65 @@ ${content}</tr>
       console.error("Failed to save draft:", error);
     }
   }
+  function showProgress(text) {
+    var el = document.createElement("div");
+    el.id = "export-progress";
+    el.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--bg-primary,#fff);padding:20px 32px;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.3);z-index:9999;font-size:15px;color:var(--text-primary,#333);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;';
+    el.textContent = text;
+    document.body.appendChild(el);
+    return el;
+  }
+  function hideProgress(el) {
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+  }
   async function exportPDF(app, pdfPath) {
     var tab = getActiveTab(app);
     if (!tab || !tab.editor || !app.isEditorReady) {
       console.error("Editor not ready for export");
       return;
     }
+    var progress = showProgress("\u6B63\u5728\u5BFC\u51FA PDF...");
     try {
-      if (!window.electronAPI) return;
+      if (!window.electronAPI) {
+        hideProgress(progress);
+        return;
+      }
       var content = tab.editor.getHTML();
-      var html2 = '<!DOCTYPE html>\n<html><head><meta charset="UTF-8"><title>MDowner Export</title>\n<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.6;max-width:800px;margin:0 auto;padding:40px;color:#333}h1,h2,h3,h4,h5,h6{margin-top:1.5em;margin-bottom:.5em}h1{font-size:2em}h2{font-size:1.5em}h3{font-size:1.25em}p{margin:1em 0}code{background:#f5f5f5;padding:.2em .4em;border-radius:4px;font-family:monospace}pre{background:#f5f5f5;padding:1em;border-radius:6px;overflow-x:auto}pre code{background:none;padding:0}blockquote{border-left:4px solid #ddd;margin:1em 0;padding-left:1em;color:#666}table{border-collapse:collapse;width:100%;margin:1em 0}th,td{border:1px solid #ddd;padding:.5em .75em;text-align:left}th{background:#f5f5f5;font-weight:600}img{max-width:100%;height:auto}ul,ol{padding-left:1.5em}li{margin:.25em 0}</style>\n</head><body>' + content + "</body></html>";
+      var html2 = '<!DOCTYPE html>\n<html><head><meta charset="UTF-8"><title>MDowner Export</title>\n<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.6;max-width:1100px;margin:0 auto;padding:40px;color:#333}h1,h2,h3,h4,h5,h6{margin-top:1.5em;margin-bottom:.5em}h1{font-size:2em}h2{font-size:1.5em}h3{font-size:1.25em}p{margin:1em 0}code{background:#f5f5f5;padding:.2em .4em;border-radius:4px;font-family:monospace}pre{background:#f5f5f5;padding:1em;border-radius:6px;overflow-x:auto}pre code{background:none;padding:0}blockquote{border-left:4px solid #ddd;margin:1em 0;padding-left:1em;color:#666}table{border-collapse:collapse;width:100%;margin:1em 0}th,td{border:1px solid #ddd;padding:.5em .75em;text-align:left}th{background:#f5f5f5;font-weight:600}img{max-width:100%;height:auto}ul,ol{padding-left:1.5em}li{margin:.25em 0}</style>\n</head><body>' + content + "</body></html>";
       var result = await window.electronAPI.generatePDF(pdfPath, html2);
+      hideProgress(progress);
       if (result.success) {
         alert("PDF\u5BFC\u51FA\u6210\u529F");
       } else {
         alert("\u5BFC\u51FAPDF\u5931\u8D25: " + result.error);
       }
     } catch (error) {
+      hideProgress(progress);
       console.error("Failed to export PDF:", error);
       alert("\u5BFC\u51FAPDF\u5931\u8D25: " + error.message);
+    }
+  }
+  async function exportDOCX(app, docPath) {
+    var tab = getActiveTab(app);
+    if (!tab || !tab.editor || !app.isEditorReady) {
+      console.error("Editor not ready for export");
+      return;
+    }
+    var progress = showProgress("\u6B63\u5728\u5BFC\u51FA DOCX...");
+    try {
+      if (!window.electronAPI) {
+        hideProgress(progress);
+        return;
+      }
+      var content = tab.editor.getHTML();
+      var html2 = '<!DOCTYPE html>\n<html><head><meta charset="UTF-8"><title>MDowner Export</title>\n<style>@page{size:A4;margin:2cm}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.6;max-width:1100px;margin:0 auto;padding:40px;color:#333}h1,h2,h3,h4,h5,h6{margin-top:1.5em;margin-bottom:.5em}h1{font-size:2em}h2{font-size:1.5em}h3{font-size:1.25em}p{margin:1em 0}code{background:#f5f5f5;padding:.2em .4em;border-radius:4px;font-family:monospace}pre{background:#f5f5f5;padding:1em;border-radius:6px;overflow-x:auto}pre code{background:none;padding:0}blockquote{border-left:4px solid #ddd;margin:1em 0;padding-left:1em;color:#666}table{border-collapse:collapse;width:100%;margin:1em 0}th,td{border:1px solid #ddd;padding:.5em .75em;text-align:left}th{background:#f5f5f5;font-weight:600}img{max-width:100%;height:auto}ul,ol{padding-left:1.5em}li{margin:.25em 0}</style>\n</head><body>' + content + "</body></html>";
+      var result = await window.electronAPI.writeFile(docPath, html2);
+      hideProgress(progress);
+      alert("DOCX\u5BFC\u51FA\u6210\u529F");
+    } catch (error) {
+      hideProgress(progress);
+      console.error("Failed to export DOCX:", error);
+      alert("\u5BFC\u51FADOCX\u5931\u8D25: " + error.message);
     }
   }
   var init_file_ops = __esm({
@@ -40955,6 +41292,9 @@ ${content}</tr>
         exportPDF(p) {
           return exportPDF(this, p);
         }
+        exportDOCX(p) {
+          return exportDOCX(this, p);
+        }
         switchTab(id) {
           switchTab(this, id);
         }
@@ -41065,6 +41405,9 @@ ${content}</tr>
           window.electronAPI.onExportPDF(function(path) {
             self.exportPDF(path);
           });
+          window.electronAPI.onExportDOCX(function(path) {
+            self.exportDOCX(path);
+          });
           window.electronAPI.onPrepareSave(function(filePath) {
             var t = getActiveTab(self);
             if (t && t.editor && window.electronAPI) {
@@ -41134,15 +41477,92 @@ ${content}</tr>
             }
           }
         }
-        // 保存所有标签后关闭
+        // 关闭前逐个选择保存——自定义弹窗
         async saveAllTabsAndClose() {
           var self = this;
-          for (var i = 0; i < this.tabs.length; i++) {
-            var tab = this.tabs[i];
-            if (tab.isModified && tab.filePath) {
-              var html2 = tab.editor.getHTML();
-              await window.electronAPI.saveFile(tab.filePath, html2);
-              tab.isModified = false;
+          var unsaved = this.tabs.filter(function(t) {
+            return t.isModified;
+          });
+          if (unsaved.length === 0) {
+            saveTabConfig(this);
+            window.electronAPI.allTabsSavedClose();
+            return;
+          }
+          var saveList = await new Promise(function(resolve) {
+            var overlay = document.createElement("div");
+            overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;";
+            var dialog = document.createElement("div");
+            dialog.style.cssText = 'background:var(--bg-primary,#fff);border-radius:8px;padding:24px;min-width:420px;max-width:520px;max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.3);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;';
+            var title = document.createElement("h3");
+            title.textContent = "\u4FDD\u5B58\u66F4\u6539";
+            title.style.cssText = "margin:0 0 4px;font-size:16px;color:var(--text-primary,#333);";
+            var sub = document.createElement("p");
+            sub.textContent = "\u52FE\u9009\u9700\u8981\u4FDD\u5B58\u7684\u6807\u7B7E\u9875\uFF1A";
+            sub.style.cssText = "margin:0 0 16px;font-size:13px;color:var(--text-secondary,#666);";
+            dialog.appendChild(title);
+            dialog.appendChild(sub);
+            var items = [];
+            unsaved.forEach(function(tab) {
+              var label = document.createElement("label");
+              label.style.cssText = "display:flex;align-items:center;padding:6px 0;font-size:14px;cursor:pointer;color:var(--text-primary,#333);";
+              var cb = document.createElement("input");
+              cb.type = "checkbox";
+              cb.checked = true;
+              cb.style.cssText = "margin-right:10px;width:16px;height:16px;accent-color:#8b5cf6;";
+              label.appendChild(cb);
+              var span = document.createElement("span");
+              span.textContent = tab.fileName;
+              span.style.cssText = "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;";
+              label.appendChild(span);
+              dialog.appendChild(label);
+              items.push({ cb, tab });
+            });
+            var btns = document.createElement("div");
+            btns.style.cssText = "display:flex;justify-content:flex-end;gap:8px;margin-top:20px;";
+            function addBtn(text, primary, action) {
+              var btn = document.createElement("button");
+              btn.textContent = text;
+              btn.style.cssText = primary ? "padding:8px 20px;border-radius:4px;border:none;background:#8b5cf6;color:#fff;font-size:14px;cursor:pointer;" : "padding:8px 20px;border-radius:4px;border:1px solid var(--border-color,#ddd);background:transparent;color:var(--text-primary,#333);font-size:14px;cursor:pointer;";
+              btn.onclick = function() {
+                document.body.removeChild(overlay);
+                resolve(action);
+              };
+              btn.onmouseenter = function() {
+                if (!primary) btn.style.background = "var(--bg-secondary,#f5f5f5)";
+              };
+              btn.onmouseleave = function() {
+                if (!primary) btn.style.background = "transparent";
+              };
+              return btn;
+            }
+            btns.appendChild(addBtn("\u53D6\u6D88", false, null));
+            btns.appendChild(addBtn("\u5168\u90E8\u4E0D\u4FDD\u5B58", false, "nosave"));
+            btns.appendChild(addBtn("\u4FDD\u5B58\u9009\u4E2D", true, { items }));
+            dialog.appendChild(btns);
+            overlay.appendChild(dialog);
+            document.body.appendChild(overlay);
+            function onKey(e) {
+              if (e.key === "Escape") {
+                document.body.removeChild(overlay);
+                resolve(null);
+              }
+            }
+            document.addEventListener("keydown", onKey, { once: true });
+          });
+          if (!saveList) return;
+          if (saveList === "nosave") {
+            saveList = { items: [] };
+          }
+          for (var i = 0; i < saveList.items.length; i++) {
+            var item = saveList.items[i];
+            if (item.cb.checked && item.tab.filePath) {
+              try {
+                var html2 = item.tab.editor.getHTML();
+                await window.electronAPI.saveFile(item.tab.filePath, html2);
+                item.tab.isModified = false;
+              } catch (e) {
+                console.error("Save failed:", item.tab.fileName, e);
+              }
             }
           }
           updateTabBar(this);
