@@ -85,6 +85,18 @@ async function createWindow() {
   // 加载HTML文件
   mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
 
+  // 渲染进程崩溃检测
+  mainWindow.webContents.on('render-process-gone', function(event, details) {
+    console.error('[FATAL] Renderer process gone! Reason:', details.reason, 'Exit code:', details.exitCode);
+  });
+  mainWindow.webContents.on('did-fail-load', function(event, errorCode, errorDescription) {
+    console.error('[FATAL] Page load failed:', errorCode, errorDescription);
+  });
+  // 把渲染进程的 console 也打印到主进程终端
+  mainWindow.webContents.on('console-message', function(event, level, message) {
+    console.log('[RENDERER]', message);
+  });
+
   // 窗口准备好后显示
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
