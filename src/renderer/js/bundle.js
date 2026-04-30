@@ -40584,6 +40584,7 @@ ${content}</tr>
     }) || null;
   }
   function createTab(app, filePath, content, noSwitch) {
+    console.log("[TABS] createTab called, filePath:", filePath, "noSwitch:", noSwitch, "tabs count:", app.tabs.length);
     var tabId = genTabId();
     var fileName = filePath ? filePath.split(/[/\\]/).pop() : "\u672A\u547D\u540D";
     var wrapper = document.createElement("div");
@@ -41382,6 +41383,7 @@ ${content}</tr>
             createTab(self);
           });
           window.electronAPI.onOpenFile(function(data) {
+            console.log("[APP] onOpenFile received:", data.path);
             createTab(self, data.path, data.content);
           });
           window.electronAPI.onFileSaved(function() {

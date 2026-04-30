@@ -290,7 +290,9 @@ async function openFileDialog() {
 async function openFile(filePath) {
   try {
     const content = await fsPromises.readFile(filePath, 'utf-8');
+    console.log('[MAIN] openFile sending open-file IPC:', filePath);
     safeSend('open-file', { path: filePath, content });
+    console.log('[MAIN] openFile IPC sent successfully');
 
     // 更新最近文件列表
     const config = await loadConfig();

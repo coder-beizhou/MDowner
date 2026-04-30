@@ -188,7 +188,7 @@ class MDownerApp {
 
     var self = this;
     window.electronAPI.onNewFile(function() { createTab(self); });
-    window.electronAPI.onOpenFile(function(data) { createTab(self, data.path, data.content); });
+    window.electronAPI.onOpenFile(function(data) { console.log('[APP] onOpenFile received:', data.path); createTab(self, data.path, data.content); });
     window.electronAPI.onFileSaved(function() {
       var t = getActiveTab(self);
       if (t) { t.isModified = false; }

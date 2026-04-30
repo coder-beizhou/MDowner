@@ -19,6 +19,7 @@ export function getActiveTab(app) {
 
 // 创建新标签（noSwitch=true 时只创建不切换，批量恢复用）
 export function createTab(app, filePath, content, noSwitch) {
+  console.log('[TABS] createTab called, filePath:', filePath, 'noSwitch:', noSwitch, 'tabs count:', app.tabs.length);
   var tabId = genTabId();
   var fileName = filePath ? filePath.split(/[/\\]/).pop() : '未命名';
 
