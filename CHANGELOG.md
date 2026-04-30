@@ -4,6 +4,18 @@
 
 ---
 
+## v2.3.4 (2026-04-30) —「跨平台」
+
+### 🍎 macOS 支持
+- 代码层面完成 macOS/Linux/Windows 三平台适配
+- Chrome 路径自动根据 `process.platform` 选择对应查找列表（macOS/Linux/Windows）
+- PDF 导出在 macOS 上自动搜索 `/Applications` 下的 Chrome/Chromium/Edge
+- 新增 `npm run build:mac` 脚本（需在 macOS 上运行）
+- GitHub Actions 自动构建：推送版本 tag 自动出 macOS `.dmg`
+- 生成 1024x1024 PNG 图标（紫色主题），electron-builder 自动转 `.icns`
+
+---
+
 ## v2.3.3 (2026-04-30) —「全面加固」
 
 ### 🔍 全代码审查修复
