@@ -40584,7 +40584,6 @@ ${content}</tr>
     }) || null;
   }
   function createTab(app, filePath, content, noSwitch) {
-    console.log("[TABS] createTab called, filePath:", filePath, "noSwitch:", noSwitch, "tabs count:", app.tabs.length);
     var tabId = genTabId();
     var fileName = filePath ? filePath.split(/[/\\]/).pop() : "\u672A\u547D\u540D";
     var wrapper = document.createElement("div");
@@ -40661,6 +40660,7 @@ ${content}</tr>
         return;
       }
     }
+    deleteDraft(tab.id);
     if (tab.editor) {
       tab.editor.destroy();
     }
@@ -40677,6 +40677,14 @@ ${content}</tr>
     } else {
       updateTabBar(app);
       saveTabConfig(app);
+    }
+  }
+  async function deleteDraft(tabId) {
+    if (!window.electronAPI) return;
+    try {
+      var draftPath = await window.electronAPI.getDraftPath(tabId);
+      await window.electronAPI.deleteDraft(draftPath);
+    } catch (_) {
     }
   }
   function nextTab(app) {
@@ -40804,6 +40812,7 @@ ${content}</tr>
       return t.id === tabId;
     });
     if (!tab) return;
+    deleteDraft(tabId);
     if (tab.editor) tab.editor.destroy();
     if (tab.wrapperEl && tab.wrapperEl.parentNode) tab.wrapperEl.parentNode.removeChild(tab.wrapperEl);
     var idx = app.tabs.indexOf(tab);
@@ -41392,7 +41401,6 @@ ${content}</tr>
             createTab(self);
           });
           window.electronAPI.onOpenFile(function(data) {
-            console.log("[APP] onOpenFile received:", data.path);
             createTab(self, data.path, data.content);
           });
           window.electronAPI.onFileSaved(function() {

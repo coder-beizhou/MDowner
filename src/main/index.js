@@ -62,6 +62,29 @@ async function saveConfig(config) {
   }
 }
 
+// 清理孤儿草稿（上次运行时未正常关闭标签留下的草稿）
+async function cleanOrphanDrafts() {
+  try {
+    var dir = app.getPath('userData');
+    var files = await fsPromises.readdir(dir);
+    var now = Date.now();
+    for (var i = 0; i < files.length; i++) {
+      var f = files[i];
+      // 只处理 draft_tab_*.md 文件
+      if (!f.startsWith('draft_tab_') || !f.endsWith('.md')) continue;
+      var filePath = path.join(dir, f);
+      try {
+        var stat = await fsPromises.stat(filePath);
+        // 删除超过 7 天的草稿
+        if (now - stat.mtimeMs > 7 * 24 * 3600 * 1000) {
+          await fsPromises.unlink(filePath);
+          console.log('[CLEAN] Deleted old draft:', f);
+        }
+      } catch(_) {}
+    }
+  } catch(_) {}
+}
+
 // 创建主窗口
 async function createWindow() {
   const config = await loadConfig();
@@ -82,19 +105,15 @@ async function createWindow() {
     titleBarStyle: 'default'
   });
 
-  // 加载HTML文件
+    // 加载HTML文件
   mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+
+  // 清理孤儿草稿文件（已关闭标签的残留草稿）
+  cleanOrphanDrafts();
 
   // 渲染进程崩溃检测
   mainWindow.webContents.on('render-process-gone', function(event, details) {
-    console.error('[FATAL] Renderer process gone! Reason:', details.reason, 'Exit code:', details.exitCode);
-  });
-  mainWindow.webContents.on('did-fail-load', function(event, errorCode, errorDescription) {
-    console.error('[FATAL] Page load failed:', errorCode, errorDescription);
-  });
-  // 把渲染进程的 console 也打印到主进程终端
-  mainWindow.webContents.on('console-message', function(event, level, message) {
-    console.log('[RENDERER]', message);
+    console.error('[FATAL] Renderer crashed! Reason:', details.reason, 'Exit code:', details.exitCode);
   });
 
   // 窗口准备好后显示
@@ -307,10 +326,14 @@ async function openFile(filePath) {
     return;
   }
   try {
+    // 拒绝大于 5MB 的文件
+    var stat = await fsPromises.stat(filePath);
+    if (stat.size > 5 * 1024 * 1024) {
+      dialog.showErrorBox('文件过大', 'MDowner 不支持打开超过 5MB 的文件。');
+      return;
+    }
     const content = await fsPromises.readFile(filePath, 'utf-8');
-    console.log('[MAIN] openFile sending open-file IPC:', filePath);
     safeSend('open-file', { path: filePath, content });
-    console.log('[MAIN] openFile IPC sent successfully');
 
     // 更新最近文件列表
     const config = await loadConfig();
@@ -404,6 +427,10 @@ function registerIPCHandlers() {
   ipcMain.handle('get-draft-path', (_, tabId) => {
     var fileName = tabId ? 'draft_' + tabId + '.md' : 'draft.md';
     return path.join(app.getPath('userData'), fileName);
+  });
+
+  ipcMain.handle('delete-draft', async (_, draftPath) => {
+    try { await fsPromises.unlink(draftPath); } catch(_) {}
   });
 
   ipcMain.handle('generate-pdf', async (event, pdfPath, htmlContent) => {

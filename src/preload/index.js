@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 内容
   getContent: () => ipcRenderer.invoke('get-content'),
   getDraftPath: (tabId) => ipcRenderer.invoke('get-draft-path', tabId),
+  deleteDraft: (draftPath) => ipcRenderer.invoke('delete-draft', draftPath),
   saveFile: (filePath, htmlContent) => ipcRenderer.invoke('save-file', filePath, htmlContent),
   showSaveDialog: (fileName) => ipcRenderer.invoke('show-save-dialog', fileName),
   showTabMenu: () => ipcRenderer.invoke('show-tab-menu'),

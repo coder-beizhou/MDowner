@@ -19,7 +19,6 @@ export function getActiveTab(app) {
 
 // 创建新标签（noSwitch=true 时只创建不切换，批量恢复用）
 export function createTab(app, filePath, content, noSwitch) {
-  console.log('[TABS] createTab called, filePath:', filePath, 'noSwitch:', noSwitch, 'tabs count:', app.tabs.length);
   var tabId = genTabId();
   var fileName = filePath ? filePath.split(/[/\\]/).pop() : '未命名';
 
@@ -120,6 +119,9 @@ export async function closeTab(app, tabId) {
     // response === 1: 不保存，继续关闭
   }
 
+  // 清理草稿文件
+  deleteDraft(tab.id);
+
   // 销毁编辑器
   if (tab.editor) {
     tab.editor.destroy();
@@ -145,6 +147,15 @@ export async function closeTab(app, tabId) {
     updateTabBar(app);
     saveTabConfig(app);
   }
+}
+
+// 删除草稿文件
+async function deleteDraft(tabId) {
+  if (!window.electronAPI) return;
+  try {
+    var draftPath = await window.electronAPI.getDraftPath(tabId);
+    await window.electronAPI.deleteDraft(draftPath);
+  } catch(_) {}
 }
 
 // 下一个标签
@@ -300,6 +311,7 @@ async function closeAllTabs(app) {
 function closeTabSilent(app, tabId) {
   var tab = app.tabs.find(function(t) { return t.id === tabId; });
   if (!tab) return;
+  deleteDraft(tabId);
   if (tab.editor) tab.editor.destroy();
   if (tab.wrapperEl && tab.wrapperEl.parentNode) tab.wrapperEl.parentNode.removeChild(tab.wrapperEl);
   var idx = app.tabs.indexOf(tab);

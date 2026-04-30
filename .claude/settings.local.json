@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(echo \".claude/\")",
+      "Bash(git rm *)",
+      "Bash(git commit -m ' *)",
+      "Bash(npx esbuild *)",
+      "Bash(git reset *)",
+      "Bash(rm -f .git/index.lock)",
+      "Bash(git stash *)",
+      "Read(//c/Users/83792/AppData/Roaming/mdowner/**)"
+    ]
+  }
+}
