@@ -213,12 +213,6 @@ class MDownerApp {
     window.electronAPI.onToggleTheme(function() { self.toggleTheme(); });
     window.electronAPI.onExportPDF(function(path) { self.exportPDF(path); });
     window.electronAPI.onExportDOCX(function(path) { self.exportDOCX(path); });
-    window.electronAPI.onPrepareSave(function(filePath) {
-      var t = getActiveTab(self);
-      if (t && t.editor && window.electronAPI) {
-        window.electronAPI.writeAndClose(filePath, t.editor.getHTML());
-      }
-    });
     window.electronAPI.onMenuCut(function() {
       var t = getActiveTab(self);
       if (t && t.editor) document.execCommand('cut');
@@ -241,10 +235,9 @@ class MDownerApp {
   // 保存活动标签
   async saveActiveTab() {
     var tab = getActiveTab(this);
-    if (!tab) return;
+    if (!tab) return false;
     if (!tab.filePath) {
-      await this.saveActiveTabAs(null);
-      return;
+      return await this.saveActiveTabAs(null);
     }
     var html = tab.editor.getHTML();
     var result = await window.electronAPI.saveFile(tab.filePath, html);
@@ -254,27 +247,46 @@ class MDownerApp {
       updateTabBar(this);
       window.electronAPI.contentSaved();
       saveTabConfig(this);
+      return true;
     }
+    var message = result && result.error ? result.error : '未知错误';
+    console.error('Save failed:', message);
+    alert('保存失败: ' + message);
+    return false;
   }
 
   // 另存为活动标签
   async saveActiveTabAs(filePath) {
-    // filePath 来自主进程的 save-file-as 事件，null 表示需要触发 save dialog
     var tab = getActiveTab(this);
-    if (!tab) return;
-    var html = tab.editor.getHTML();
-    if (filePath) {
-      var result = await window.electronAPI.saveFile(filePath, html);
-      if (result && result.success) {
-        tab.filePath = filePath;
-        tab.fileName = filePath.split(/[/\\]/).pop();
-        tab.isModified = false;
-        this.updateStatusBar();
-        updateTabBar(this);
-        window.electronAPI.contentSaved();
-        saveTabConfig(this);
-      }
+    if (!tab) return false;
+
+    var targetPath = filePath;
+    if (!targetPath) {
+      var saveResult = await window.electronAPI.saveFileDialog({
+        filters: [{ name: 'Markdown文件', extensions: ['md'] }],
+        defaultPath: tab.fileName || '未命名.md'
+      });
+      if (saveResult.canceled || !saveResult.filePath) return false;
+      targetPath = saveResult.filePath;
     }
+
+    var html = tab.editor.getHTML();
+    var result = await window.electronAPI.saveFile(targetPath, html);
+    if (result && result.success) {
+      tab.filePath = targetPath;
+      tab.fileName = targetPath.split(/[/\\]/).pop();
+      tab.isModified = false;
+      this.updateStatusBar();
+      updateTabBar(this);
+      window.electronAPI.contentSaved();
+      saveTabConfig(this);
+      return true;
+    }
+
+    var message = result && result.error ? result.error : '未知错误';
+    console.error('Save as failed:', message);
+    alert('保存失败: ' + message);
+    return false;
   }
 
   // 关闭前逐个选择保存——自定义弹窗
@@ -356,13 +368,29 @@ class MDownerApp {
     // 保存勾选的标签
     for (var i = 0; i < saveList.items.length; i++) {
       var item = saveList.items[i];
-      if (item.cb.checked && item.tab.filePath) {
+      if (!item.cb.checked) continue;
+
+      var saved = false;
+      if (item.tab.filePath) {
         try {
           var html = item.tab.editor.getHTML();
-          await window.electronAPI.saveFile(item.tab.filePath, html);
-          item.tab.isModified = false;
-        } catch(e) { console.error('Save failed:', item.tab.fileName, e); }
+          var result = await window.electronAPI.saveFile(item.tab.filePath, html);
+          saved = !!(result && result.success);
+          if (!saved) {
+            var message = result && result.error ? result.error : '未知错误';
+            alert('保存「' + item.tab.fileName + '」失败: ' + message);
+          }
+        } catch(e) {
+          console.error('Save failed:', item.tab.fileName, e);
+          alert('保存「' + item.tab.fileName + '」失败: ' + e.message);
+        }
+      } else {
+        switchTab(this, item.tab.id);
+        saved = await this.saveActiveTabAs(null);
       }
+
+      if (!saved) return;
+      item.tab.isModified = false;
     }
     updateTabBar(this);
     saveTabConfig(this);

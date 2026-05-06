@@ -205,7 +205,11 @@ export async function insertImage(app) {
   if (tabLocal && selectedFilePath) {
     if (window.electronAPI) {
       const r = await window.electronAPI.copyImageToAssets(selectedFilePath, app.currentFile);
-      src = r.success ? `file:///${r.absolutePath.replace(/\\/g, '/')}` : `file:///${selectedFilePath.replace(/\\/g, '/')}`;
+      if (r.success) {
+        src = app.currentFile && r.relativePath ? r.relativePath : `file:///${r.absolutePath.replace(/\\/g, '/')}`;
+      } else {
+        src = `file:///${selectedFilePath.replace(/\\/g, '/')}`;
+      }
     } else {
       src = `file:///${selectedFilePath.replace(/\\/g, '/')}`;
     }
@@ -258,7 +262,8 @@ async function _handlePastedImage(app, blob) {
 
   const result = await window.electronAPI.saveImageDataUrl(dataUrl, app.currentFile, blob.type);
   if (result?.success) {
-    app.editor.chain().focus().setImage({ src: `file:///${result.absolutePath.replace(/\\/g, '/')}` }).run();
+    const src = app.currentFile && result.relativePath ? result.relativePath : `file:///${result.absolutePath.replace(/\\/g, '/')}`;
+    app.editor.chain().focus().setImage({ src }).run();
   } else {
     app.editor.chain().focus().setImage({ src: dataUrl }).run();
   }

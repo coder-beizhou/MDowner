@@ -9,7 +9,16 @@ function genTabId() {
 
 // 初始化标签栏 DOM
 export function initTabBar(app) {
-  // DOM 已在 index.html 中创建
+  var tabBar = document.getElementById('tab-bar');
+  if (tabBar && !tabBar._mdownerContextMenuBound) {
+    tabBar._mdownerContextMenuBound = true;
+    tabBar.addEventListener('contextmenu', function(e) {
+      if (e.target.closest('.tab-item')) return;
+      e.preventDefault();
+      app._contextTabId = null;
+      handleTabMenu(app);
+    });
+  }
 }
 
 // 获取活动标签
@@ -100,7 +109,12 @@ export async function closeTab(app, tabId) {
     if (response === 0) {
       // 保存
       if (tab.filePath) {
-        await window.electronAPI.saveFile(tab.filePath, tab.editor.getHTML());
+        var result = await window.electronAPI.saveFile(tab.filePath, tab.editor.getHTML());
+        if (!result || !result.success) {
+          var message = result && result.error ? result.error : '未知错误';
+          alert('保存「' + tab.fileName + '」失败: ' + message);
+          return;
+        }
       } else {
         // 无路径，触发另存为
         var saveResult = await window.electronAPI.saveFileDialog({
@@ -108,7 +122,12 @@ export async function closeTab(app, tabId) {
           defaultPath: tab.fileName
         });
         if (saveResult.canceled || !saveResult.filePath) return;
-        await window.electronAPI.saveFile(saveResult.filePath, tab.editor.getHTML());
+        var saveAsResult = await window.electronAPI.saveFile(saveResult.filePath, tab.editor.getHTML());
+        if (!saveAsResult || !saveAsResult.success) {
+          var saveAsMessage = saveAsResult && saveAsResult.error ? saveAsResult.error : '未知错误';
+          alert('保存「' + tab.fileName + '」失败: ' + saveAsMessage);
+          return;
+        }
         tab.filePath = saveResult.filePath;
         tab.fileName = saveResult.filePath.split(/[/\\]/).pop();
       }
@@ -237,17 +256,6 @@ export function updateTabBar(app) {
       closeTab(app, tab.id);
     });
   });
-
-  // 标签栏空白区右键菜单
-  var tabBar = document.getElementById('tab-bar');
-  if (tabBar) {
-    tabBar.addEventListener('contextmenu', function(e) {
-      if (e.target.closest('.tab-item')) return; // 标签上的右键由 tab item 处理
-      e.preventDefault();
-      app._contextTabId = null;
-      handleTabMenu(app);
-    });
-  }
 
   // 新建标签按钮
   var newBtn = document.getElementById('tab-new');

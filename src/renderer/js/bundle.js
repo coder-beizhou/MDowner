@@ -22797,7 +22797,7 @@ img.ProseMirror-separator {
           this.isMatchIgnored = true;
         }
       };
-      function escapeHTML(value) {
+      function escapeHTML2(value) {
         return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#x27;");
       }
       function inherit$1(original, ...objects) {
@@ -22849,7 +22849,7 @@ img.ProseMirror-separator {
          *
          * @param {string} text */
         addText(text) {
-          this.buffer += escapeHTML(text);
+          this.buffer += escapeHTML2(text);
         }
         /**
          * Adds a node open to the output stream (if needed)
@@ -23657,7 +23657,7 @@ img.ProseMirror-separator {
           this.html = html2;
         }
       };
-      var escape2 = escapeHTML;
+      var escape2 = escapeHTML2;
       var inherit = inherit$1;
       var NO_MATCH = /* @__PURE__ */ Symbol("nomatch");
       var MAX_KEYWORD_HITS = 7;
@@ -37314,12 +37314,12 @@ img.ProseMirror-separator {
             },
             renderHTML: function(_a) {
               var node = _a.node, HTMLAttributes = _a.HTMLAttributes;
-              var lang = node.attrs.language || "text";
+              var attrs = mergeAttributes(this.options.HTMLAttributes, HTMLAttributes);
+              attrs["data-language"] = node.attrs.language || "text";
               return [
                 "pre",
-                mergeAttributes(this.options.HTMLAttributes, HTMLAttributes),
-                ["code", { class: node.attrs.language ? "language-" + node.attrs.language : null }, 0],
-                ["span", { class: "code-lang-tag", contenteditable: "false" }, lang]
+                attrs,
+                ["code", { class: node.attrs.language ? "language-" + node.attrs.language : null }, 0]
               ];
             }
           }).configure({ HTMLAttributes: { class: "code-block" } }),
@@ -37345,10 +37345,10 @@ img.ProseMirror-separator {
           console.log("Editor created successfully on #" + editorElement.id);
           if (!app.isEditorReady) {
             app.isEditorReady = true;
-            app.autoDetectLanguages = function() {
-              autoDetectCodeLanguages(editorInstance);
-            };
           }
+          editorInstance._autoDetect = function() {
+            autoDetectCodeLanguages(editorInstance);
+          };
         },
         onUpdate: ({ editor }) => {
           if (tabId && app.activeTabId !== tabId) return;
@@ -37810,7 +37810,9 @@ img.ProseMirror-separator {
   }
   function updateTableControls(app) {
     if (!app._tableOverlay) return;
-    var editorEl = app.getActiveTab ? app.getActiveTab().editorEl || document.getElementById("editor-container") : document.getElementById("editor");
+    var activeTab = app.getActiveTab ? app.getActiveTab() : null;
+    var editorEl = activeTab ? activeTab.editorEl : document.getElementById("editor-container");
+    if (!editorEl) return;
     const container = document.getElementById("editor-container");
     if (!editorEl || !container) return;
     const wrappers = editorEl.querySelectorAll(".tableWrapper");
@@ -38007,17 +38009,23 @@ img.ProseMirror-separator {
       var pm = document.querySelector(".ProseMirror");
       if (pm) pm.style.pointerEvents = "";
     }
+    function isFileDrag(e) {
+      return e.dataTransfer && e.dataTransfer.types && Array.prototype.indexOf.call(e.dataTransfer.types, "Files") !== -1;
+    }
     document.addEventListener("dragenter", function(e) {
+      if (!isFileDrag(e)) return;
       e.preventDefault();
       e.stopPropagation();
       showIndicator();
     });
     document.addEventListener("dragleave", function(e) {
+      if (!isFileDrag(e)) return;
       e.preventDefault();
       e.stopPropagation();
       if (!e.relatedTarget) hideIndicator();
     });
     document.addEventListener("dragover", function(e) {
+      if (!isFileDrag(e)) return;
       e.preventDefault();
       e.stopPropagation();
     });
@@ -38503,7 +38511,11 @@ img.ProseMirror-separator {
     if (tabLocal && selectedFilePath) {
       if (window.electronAPI) {
         const r2 = await window.electronAPI.copyImageToAssets(selectedFilePath, app.currentFile);
-        src = r2.success ? `file:///${r2.absolutePath.replace(/\\/g, "/")}` : `file:///${selectedFilePath.replace(/\\/g, "/")}`;
+        if (r2.success) {
+          src = app.currentFile && r2.relativePath ? r2.relativePath : `file:///${r2.absolutePath.replace(/\\/g, "/")}`;
+        } else {
+          src = `file:///${selectedFilePath.replace(/\\/g, "/")}`;
+        }
       } else {
         src = `file:///${selectedFilePath.replace(/\\/g, "/")}`;
       }
@@ -38515,10 +38527,13 @@ img.ProseMirror-separator {
     }
   }
   function initImagePaste(app) {
-    const editorEl = document.getElementById("editor");
-    if (!editorEl) return;
-    editorEl.addEventListener("paste", (e) => {
+    const container = document.getElementById("editor-container");
+    if (!container) return;
+    container.addEventListener("paste", (e) => {
       if (!app.editor || !app.isEditorReady) return;
+      var activeTab = app.getActiveTab ? app.getActiveTab() : null;
+      var pm = activeTab ? activeTab.editorEl.querySelector(".ProseMirror") : null;
+      if (!pm || !pm.contains(document.activeElement)) return;
       const items = e.clipboardData?.items;
       if (!items) return;
       for (const item of items) {
@@ -38548,7 +38563,8 @@ img.ProseMirror-separator {
     });
     const result = await window.electronAPI.saveImageDataUrl(dataUrl, app.currentFile, blob.type);
     if (result?.success) {
-      app.editor.chain().focus().setImage({ src: `file:///${result.absolutePath.replace(/\\/g, "/")}` }).run();
+      const src = app.currentFile && result.relativePath ? result.relativePath : `file:///${result.absolutePath.replace(/\\/g, "/")}`;
+      app.editor.chain().focus().setImage({ src }).run();
     } else {
       app.editor.chain().focus().setImage({ src: dataUrl }).run();
     }
@@ -40577,6 +40593,16 @@ ${content}</tr>
     return "tab_" + Math.random().toString(36).slice(2, 10);
   }
   function initTabBar(app) {
+    var tabBar = document.getElementById("tab-bar");
+    if (tabBar && !tabBar._mdownerContextMenuBound) {
+      tabBar._mdownerContextMenuBound = true;
+      tabBar.addEventListener("contextmenu", function(e) {
+        if (e.target.closest(".tab-item")) return;
+        e.preventDefault();
+        app._contextTabId = null;
+        handleTabMenu(app);
+      });
+    }
   }
   function getActiveTab(app) {
     return app.tabs.find(function(t) {
@@ -40644,14 +40670,24 @@ ${content}</tr>
       var response = await window.electronAPI.showSaveDialog(tab.fileName);
       if (response === 0) {
         if (tab.filePath) {
-          await window.electronAPI.saveFile(tab.filePath, tab.editor.getHTML());
+          var result = await window.electronAPI.saveFile(tab.filePath, tab.editor.getHTML());
+          if (!result || !result.success) {
+            var message = result && result.error ? result.error : "\u672A\u77E5\u9519\u8BEF";
+            alert("\u4FDD\u5B58\u300C" + tab.fileName + "\u300D\u5931\u8D25: " + message);
+            return;
+          }
         } else {
           var saveResult = await window.electronAPI.saveFileDialog({
             filters: [{ name: "Markdown\u6587\u4EF6", extensions: ["md"] }],
             defaultPath: tab.fileName
           });
           if (saveResult.canceled || !saveResult.filePath) return;
-          await window.electronAPI.saveFile(saveResult.filePath, tab.editor.getHTML());
+          var saveAsResult = await window.electronAPI.saveFile(saveResult.filePath, tab.editor.getHTML());
+          if (!saveAsResult || !saveAsResult.success) {
+            var saveAsMessage = saveAsResult && saveAsResult.error ? saveAsResult.error : "\u672A\u77E5\u9519\u8BEF";
+            alert("\u4FDD\u5B58\u300C" + tab.fileName + "\u300D\u5931\u8D25: " + saveAsMessage);
+            return;
+          }
           tab.filePath = saveResult.filePath;
           tab.fileName = saveResult.filePath.split(/[/\\]/).pop();
         }
@@ -40746,15 +40782,6 @@ ${content}</tr>
         closeTab(app, tab.id);
       });
     });
-    var tabBar = document.getElementById("tab-bar");
-    if (tabBar) {
-      tabBar.addEventListener("contextmenu", function(e) {
-        if (e.target.closest(".tab-item")) return;
-        e.preventDefault();
-        app._contextTabId = null;
-        handleTabMenu(app);
-      });
-    }
     var newBtn = document.getElementById("tab-new");
     if (newBtn) {
       newBtn.onclick = function() {
@@ -40812,6 +40839,7 @@ ${content}</tr>
       return t.id === tabId;
     });
     if (!tab) return;
+    if (tab.isModified) return;
     deleteDraft(tabId);
     if (tab.editor) tab.editor.destroy();
     if (tab.wrapperEl && tab.wrapperEl.parentNode) tab.wrapperEl.parentNode.removeChild(tab.wrapperEl);
@@ -40872,7 +40900,7 @@ ${content}</tr>
         tab.editor.commands.setContent(marked.parse(content || ""));
       }
       clearTimeout(app._autoDetectTimer);
-      if (app.autoDetectLanguages) app.autoDetectLanguages();
+      if (tab.editor && tab.editor._autoDetect) tab.editor._autoDetect();
     } catch (error) {
       console.error("Failed to set content:", error);
     } finally {
@@ -40990,6 +41018,9 @@ ${content}</tr>
   });
 
   // src/renderer/js/ui.js
+  function escapeHTML(str) {
+    return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
   function applyTheme(app, theme) {
     app.config.theme = theme;
     document.documentElement.setAttribute("data-theme", theme);
@@ -41047,9 +41078,9 @@ ${content}</tr>
       outline.innerHTML = '<div class="outline-empty">\u6682\u65E0\u6807\u9898</div>';
       return;
     }
-    outline.innerHTML = headings.map((h) => `
-    <div class="outline-item" data-level="${h.level}" data-pos="${h.pos}">${h.text}</div>
-  `).join("");
+    outline.innerHTML = headings.map(function(h) {
+      return '<div class="outline-item" data-level="' + h.level + '" data-pos="' + h.pos + '">' + escapeHTML(h.text) + "</div>";
+    }).join("");
     outline.querySelectorAll(".outline-item").forEach((item) => {
       item.addEventListener("click", () => {
         const pos = parseInt(item.dataset.pos);
@@ -41080,13 +41111,13 @@ ${content}</tr>
     }
   }
   function applyConfig(app) {
-    const editorElement = document.getElementById("editor");
-    if (editorElement) {
-      editorElement.style.fontSize = `${app.config.fontSize}px`;
-      editorElement.style.lineHeight = app.config.lineHeight.toString();
+    var editors = document.querySelectorAll(".tab-editor");
+    for (var i = 0; i < editors.length; i++) {
+      editors[i].style.fontSize = app.config.fontSize + "px";
+      editors[i].style.lineHeight = app.config.lineHeight.toString();
     }
     if (!app.config.sidebarVisible) {
-      const sidebar = document.getElementById("sidebar");
+      var sidebar = document.getElementById("sidebar");
       if (sidebar) sidebar.classList.add("hidden");
     }
   }
@@ -41427,12 +41458,6 @@ ${content}</tr>
           window.electronAPI.onExportDOCX(function(path) {
             self.exportDOCX(path);
           });
-          window.electronAPI.onPrepareSave(function(filePath) {
-            var t = getActiveTab(self);
-            if (t && t.editor && window.electronAPI) {
-              window.electronAPI.writeAndClose(filePath, t.editor.getHTML());
-            }
-          });
           window.electronAPI.onMenuCut(function() {
             var t = getActiveTab(self);
             if (t && t.editor) document.execCommand("cut");
@@ -41463,10 +41488,9 @@ ${content}</tr>
         // 保存活动标签
         async saveActiveTab() {
           var tab = getActiveTab(this);
-          if (!tab) return;
+          if (!tab) return false;
           if (!tab.filePath) {
-            await this.saveActiveTabAs(null);
-            return;
+            return await this.saveActiveTabAs(null);
           }
           var html2 = tab.editor.getHTML();
           var result = await window.electronAPI.saveFile(tab.filePath, html2);
@@ -41476,25 +41500,42 @@ ${content}</tr>
             updateTabBar(this);
             window.electronAPI.contentSaved();
             saveTabConfig(this);
+            return true;
           }
+          var message = result && result.error ? result.error : "\u672A\u77E5\u9519\u8BEF";
+          console.error("Save failed:", message);
+          alert("\u4FDD\u5B58\u5931\u8D25: " + message);
+          return false;
         }
         // 另存为活动标签
         async saveActiveTabAs(filePath) {
           var tab = getActiveTab(this);
-          if (!tab) return;
-          var html2 = tab.editor.getHTML();
-          if (filePath) {
-            var result = await window.electronAPI.saveFile(filePath, html2);
-            if (result && result.success) {
-              tab.filePath = filePath;
-              tab.fileName = filePath.split(/[/\\]/).pop();
-              tab.isModified = false;
-              this.updateStatusBar();
-              updateTabBar(this);
-              window.electronAPI.contentSaved();
-              saveTabConfig(this);
-            }
+          if (!tab) return false;
+          var targetPath = filePath;
+          if (!targetPath) {
+            var saveResult = await window.electronAPI.saveFileDialog({
+              filters: [{ name: "Markdown\u6587\u4EF6", extensions: ["md"] }],
+              defaultPath: tab.fileName || "\u672A\u547D\u540D.md"
+            });
+            if (saveResult.canceled || !saveResult.filePath) return false;
+            targetPath = saveResult.filePath;
           }
+          var html2 = tab.editor.getHTML();
+          var result = await window.electronAPI.saveFile(targetPath, html2);
+          if (result && result.success) {
+            tab.filePath = targetPath;
+            tab.fileName = targetPath.split(/[/\\]/).pop();
+            tab.isModified = false;
+            this.updateStatusBar();
+            updateTabBar(this);
+            window.electronAPI.contentSaved();
+            saveTabConfig(this);
+            return true;
+          }
+          var message = result && result.error ? result.error : "\u672A\u77E5\u9519\u8BEF";
+          console.error("Save as failed:", message);
+          alert("\u4FDD\u5B58\u5931\u8D25: " + message);
+          return false;
         }
         // 关闭前逐个选择保存——自定义弹窗
         async saveAllTabsAndClose() {
@@ -41574,15 +41615,27 @@ ${content}</tr>
           }
           for (var i = 0; i < saveList.items.length; i++) {
             var item = saveList.items[i];
-            if (item.cb.checked && item.tab.filePath) {
+            if (!item.cb.checked) continue;
+            var saved = false;
+            if (item.tab.filePath) {
               try {
                 var html2 = item.tab.editor.getHTML();
-                await window.electronAPI.saveFile(item.tab.filePath, html2);
-                item.tab.isModified = false;
+                var result = await window.electronAPI.saveFile(item.tab.filePath, html2);
+                saved = !!(result && result.success);
+                if (!saved) {
+                  var message = result && result.error ? result.error : "\u672A\u77E5\u9519\u8BEF";
+                  alert("\u4FDD\u5B58\u300C" + item.tab.fileName + "\u300D\u5931\u8D25: " + message);
+                }
               } catch (e) {
                 console.error("Save failed:", item.tab.fileName, e);
+                alert("\u4FDD\u5B58\u300C" + item.tab.fileName + "\u300D\u5931\u8D25: " + e.message);
               }
+            } else {
+              switchTab(this, item.tab.id);
+              saved = await this.saveActiveTabAs(null);
             }
+            if (!saved) return;
+            item.tab.isModified = false;
           }
           updateTabBar(this);
           saveTabConfig(this);

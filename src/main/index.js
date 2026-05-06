@@ -35,7 +35,8 @@ function getFileFromArgv(argv) {
     const arg = argv[i];
     if (arg.startsWith('-')) continue;
     if (arg === process.execPath) continue;
-    if (arg.endsWith('.md') || arg.endsWith('.markdown') || arg.endsWith('.txt')) {
+    const ext = path.extname(arg).toLowerCase();
+    if (['.md', '.markdown', '.txt'].includes(ext)) {
       return arg;
     }
   }
@@ -88,7 +89,7 @@ async function cleanOrphanDrafts() {
 // 创建主窗口
 async function createWindow() {
   const config = await loadConfig();
-  
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -438,9 +439,10 @@ function registerIPCHandlers() {
   });
 
   ipcMain.handle('generate-pdf', async (event, pdfPath, htmlContent) => {
+    let browser = null;
     try {
       const puppeteer = require('puppeteer-core');
-      
+
       // 跨平台 Chrome/Chromium 路径查找
       var chromePaths = process.platform === 'darwin' ? [
         '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -459,7 +461,7 @@ function registerIPCHandlers() {
         path.join(process.env['ProgramFiles'] || '', 'Microsoft\\Edge\\Application\\msedge.exe')
       ];
       if (process.env.CHROME_PATH) chromePaths.push(process.env.CHROME_PATH);
-      
+
       let executablePath = null;
       for (const chromePath of chromePaths) {
         if (chromePath && fs.existsSync(chromePath)) {
@@ -467,38 +469,44 @@ function registerIPCHandlers() {
           break;
         }
       }
-      
+
       if (!executablePath) {
         throw new Error('未找到Chrome浏览器，请安装Chrome或设置CHROME_PATH环境变量');
       }
-      
-      const browser = await puppeteer.launch({
+
+      browser = await puppeteer.launch({
         executablePath: executablePath,
         headless: true
       });
-      
+
       const page = await browser.newPage();
-      await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
-      
+      await page.setContent(htmlContent, { waitUntil: 'domcontentloaded' });
+
       await page.pdf({
         path: pdfPath,
         format: 'A4',
         margin: { top: '1cm', right: '1cm', bottom: '1cm', left: '1cm' }
       });
-      
-      await browser.close();
-      
+
       return { success: true };
     } catch (error) {
       console.error('PDF generation failed:', error);
       return { success: false, error: error.message };
+    } finally {
+      if (browser) {
+        try { await browser.close(); } catch (_) {}
+      }
     }
   });
 
   // 用浏览器打开外部链接
   ipcMain.handle('open-external', async (_, url) => {
     try {
-      await shell.openExternal(url);
+      const parsed = new URL(String(url || ''));
+      if (!['http:', 'https:', 'mailto:'].includes(parsed.protocol)) {
+        return { success: false, error: '不支持的链接协议' };
+      }
+      await shell.openExternal(parsed.toString());
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
@@ -626,6 +634,10 @@ function registerIPCHandlers() {
 
   // 读取二进制文件返回 base64（预览用）
   ipcMain.handle('read-binary-file', async (_, filePath) => {
+    const stat = await fsPromises.stat(filePath);
+    if (stat.size > 20 * 1024 * 1024) {
+      throw new Error('图片文件不能超过 20MB');
+    }
     const buffer = await fsPromises.readFile(filePath);
     return buffer.toString('base64');
   });
@@ -738,30 +750,6 @@ function registerIPCHandlers() {
       for (const fp of filePaths) {
         await openFile(fp);
       }
-    }
-  });
-
-  ipcMain.on('save-file-and-close', async (_, filePath) => {
-    try {
-      const content = await fsPromises.readFile(filePath, 'utf-8');
-      // 通知渲染进程用 content 覆盖编辑器内容后再保存
-      safeSend('prepare-save', filePath, content);
-    } catch {
-      // 文件不存在，由渲染进程直接写入
-      safeSend('prepare-save', filePath, null);
-    }
-  });
-
-  ipcMain.on('write-and-close', async (_, filePath, content) => {
-    try {
-      await fsPromises.writeFile(filePath, content, 'utf-8');
-      if (activeTabInfo) activeTabInfo.isModified = false;
-      updateTitle();
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.destroy();
-      }
-    } catch (error) {
-      dialog.showErrorBox('错误', `无法保存文件: ${error.message}`);
     }
   });
 }

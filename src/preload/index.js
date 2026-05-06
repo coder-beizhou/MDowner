@@ -11,11 +11,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveFileDialog: (options) => ipcRenderer.invoke('save-file-dialog', options),
   readFile: (path) => ipcRenderer.invoke('read-file', path),
   writeFile: (path, content) => ipcRenderer.invoke('write-file', path, content),
-  
   // 配置
   loadConfig: () => ipcRenderer.invoke('load-config'),
   saveConfig: (config) => ipcRenderer.invoke('save-config', config),
-  
   // 内容
   getContent: () => ipcRenderer.invoke('get-content'),
   getDraftPath: (tabId) => ipcRenderer.invoke('get-draft-path', tabId),
@@ -83,7 +81,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('file-save-as');
     ipcRenderer.on('file-save-as', (event, filePath) => callback(filePath));
   },
-  
   // 图片操作
   openImageDialog: () => ipcRenderer.invoke('open-image-dialog'),
   readBinaryFile: (filePath) => ipcRenderer.invoke('read-binary-file', filePath),
@@ -108,13 +105,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('menu-copy', callback);
   },
 
-  // 关闭时保存
-  onPrepareSave: (callback) => {
-    ipcRenderer.removeAllListeners('prepare-save');
-    ipcRenderer.on('prepare-save', (event, filePath, oldContent) => callback(filePath, oldContent));
-  },
-  writeAndClose: (filePath, content) => ipcRenderer.send('write-and-close', filePath, content),
-  
   // 移除监听
   removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
 
