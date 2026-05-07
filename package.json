@@ -1,6 +1,6 @@
 {
   "name": "mdowner",
-  "version": "2.5.1",
+  "version": "2.5.2",
   "description": "A Typora-like Markdown editor",
   "main": "src/main/index.js",
   "type": "commonjs",
@@ -10,9 +10,9 @@
     "build:renderer": "esbuild src/renderer/js/app.js --bundle --outfile=src/renderer/js/bundle.js --format=iife --platform=browser",
     "start": "npm run build:renderer && electron .",
     "build": "npm run build:renderer && electron-builder",
-    "build:win": "npm run build:renderer && electron-builder --win",
+    "build:win": "npm run build:renderer && electron-builder --win && python scripts/build-post.py",
     "build:mac": "npm run build:renderer && electron-builder --mac",
-    "build:all": "npm run build:renderer && electron-builder --win && python scripts/build-post.py"
+    "build:all": "npm run build:win"
   },
   "build": {
     "appId": "com.mdowner.app",
@@ -41,6 +41,23 @@
         }
       ],
       "icon": "assets/icons/icon.ico",
+      "fileAssociations": [
+        {
+          "ext": "md",
+          "name": "Markdown 文档",
+          "role": "Editor"
+        },
+        {
+          "ext": "markdown",
+          "name": "Markdown 文档",
+          "role": "Editor"
+        },
+        {
+          "ext": "txt",
+          "name": "文本文件",
+          "role": "Editor"
+        }
+      ],
       "signAndEditExecutable": false
     },
     "mac": {

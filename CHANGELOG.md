@@ -4,6 +4,19 @@
 
 ---
 
+## v2.5.2 (2026-05-07) —「图标认主」
+
+### 🪟 Windows 应用身份修正
+- 为 Windows 安装包补上 `.md` / `.markdown` / `.txt` 文件关联，打开方式会把 MDowner 识别为文档处理程序而不是泛化的 Electron 程序
+- 主进程显式设置 `AppUserModelId` 为 `com.mdowner.app`，改善任务栏、快捷方式和应用身份归属
+- `build:win` 现在会自动执行构建后处理，除安装包/便携版外也会一并生成 `ZipPkg` 压缩包
+
+### 📦 打包流程收口
+- `build:all` 直接复用 `build:win`，避免 Windows 打包链路维护两份脚本
+- 保留当前 `signAndEditExecutable: false`，绕开本机打包环境里 `winCodeSign` 解包符号链接权限问题，确保发行包仍可稳定产出
+
+---
+
 ## v2.5.1 (2026-05-07) —「草稿定格」
 
 ### 💾 草稿格式升级

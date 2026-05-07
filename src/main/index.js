@@ -6,6 +6,7 @@ const turndownService = new TurndownService();
 
 // 直接获取 Electron API
 const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
+app.setAppUserModelId('com.mdowner.app');
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
