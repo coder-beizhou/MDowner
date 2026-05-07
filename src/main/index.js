@@ -804,6 +804,15 @@ function registerIPCHandlers() {
     return await fsPromises.readFile(filePath, 'utf-8');
   });
 
+  ipcMain.handle('read-file-if-exists', async (_, filePath) => {
+    try {
+      return await fsPromises.readFile(filePath, 'utf-8');
+    } catch (error) {
+      if (error && error.code === 'ENOENT') return null;
+      throw error;
+    }
+  });
+
   ipcMain.handle('write-file', async (_, filePath, content) => {
     await fsPromises.writeFile(filePath, content);
   });

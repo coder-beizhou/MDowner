@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
   saveFileDialog: (options) => ipcRenderer.invoke('save-file-dialog', options),
   readFile: (path) => ipcRenderer.invoke('read-file', path),
+  readFileIfExists: (path) => ipcRenderer.invoke('read-file-if-exists', path),
   writeFile: (path, content) => ipcRenderer.invoke('write-file', path, content),
   // 配置
   loadConfig: () => ipcRenderer.invoke('load-config'),

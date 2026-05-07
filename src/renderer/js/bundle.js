@@ -41274,7 +41274,7 @@ ${content}</tr>
             if (draftId && window.electronAPI) {
               try {
                 var draftPath = await window.electronAPI.getDraftPath(draftId);
-                draftContent = await window.electronAPI.readFile(draftPath);
+                draftContent = window.electronAPI.readFileIfExists ? await window.electronAPI.readFileIfExists(draftPath) : await window.electronAPI.readFile(draftPath);
               } catch (_) {
               }
             }
