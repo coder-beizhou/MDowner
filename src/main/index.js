@@ -7,7 +7,23 @@ const turndownService = new TurndownService();
 // 直接获取 Electron API
 const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
 
-console.log('Electron API loaded successfully');
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+}
+
+app.on('second-instance', async function(event, argv) {
+  const files = extractFilesFromArgv(argv);
+  focusMainWindow();
+  await openFilesInPrimaryWindow(files);
+});
+
+app.on('open-file', async function(event, filePath) {
+  event.preventDefault();
+  if (!filePath || !isOpenableFile(filePath)) return;
+  await openFilesInPrimaryWindow([filePath]);
+});
+
 
 // 默认配置
 const DEFAULT_CONFIG = {
@@ -18,6 +34,8 @@ const DEFAULT_CONFIG = {
   autoSaveInterval: 60000,
   recentFiles: [],
   lastOpenedFile: null,
+  openTabs: [],
+  activeTabIndex: 0,
   sidebarVisible: true,
   sidebarWidth: 250
 };
@@ -28,19 +46,95 @@ let hasUnsavedTabs = false;
 let hasSelection = false;
 let cutMenuItem = null;
 let copyMenuItem = null;
+let rendererReady = false;
+let pendingOpenFiles = [];
+let openingPendingFiles = false;
 
-// 从命令行参数中提取文件路径
-function getFileFromArgv(argv) {
-  for (let i = argv.length - 1; i >= 0; i--) {
+function normalizePathForCompare(filePath) {
+  return String(filePath || '').replace(/\\/g, '/').toLowerCase();
+}
+
+function isOpenableFile(filePath) {
+  const ext = path.extname(String(filePath || '')).toLowerCase();
+  return ['.md', '.markdown', '.txt'].includes(ext);
+}
+
+function extractFilesFromArgv(argv) {
+  const seen = new Set();
+  const files = [];
+  for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
+    if (!arg || typeof arg !== 'string') continue;
     if (arg.startsWith('-')) continue;
     if (arg === process.execPath) continue;
-    const ext = path.extname(arg).toLowerCase();
-    if (['.md', '.markdown', '.txt'].includes(ext)) {
-      return arg;
+    if (!isOpenableFile(arg)) continue;
+    const resolved = path.resolve(arg);
+    const normalized = normalizePathForCompare(resolved);
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    files.push(resolved);
+  }
+  return files;
+}
+
+function getDraftPathByKey(draftKey) {
+  const raw = String(draftKey || '').trim();
+  if (!raw) {
+    return path.join(app.getPath('userData'), 'draft.html');
+  }
+  const safeKey = raw.replace(/[^a-zA-Z0-9._-]/g, '_');
+  if (safeKey.startsWith('tab_')) {
+    return path.join(app.getPath('userData'), 'draft_' + safeKey + '.md');
+  }
+  if (safeKey.startsWith('draft_tab_')) {
+    return path.join(app.getPath('userData'), safeKey + '.md');
+  }
+  const baseName = safeKey.startsWith('draft_') ? safeKey : 'draft_' + safeKey;
+  return path.join(app.getPath('userData'), baseName + '.html');
+}
+
+async function listLegacyDrafts() {
+  try {
+    const dir = app.getPath('userData');
+    const files = await fsPromises.readdir(dir);
+    const matched = [];
+    for (let i = 0; i < files.length; i++) {
+      const fileName = files[i];
+      if (!/^draft_tab_.+\.md$/i.test(fileName)) continue;
+      const draftPath = path.join(dir, fileName);
+      try {
+        const stat = await fsPromises.stat(draftPath);
+        matched.push({
+          draftId: fileName.slice('draft_'.length, -'.md'.length),
+          fileName: '恢复的草稿',
+          mtimeMs: stat.mtimeMs
+        });
+      } catch (_) {}
+    }
+    matched.sort(function(a, b) { return b.mtimeMs - a.mtimeMs; });
+    return matched;
+  } catch (_) {
+    return [];
+  }
+}
+
+function enqueuePendingOpenFile(filePath) {
+  if (!filePath) return;
+  const resolved = path.resolve(filePath);
+  const normalized = normalizePathForCompare(resolved);
+  for (let i = 0; i < pendingOpenFiles.length; i++) {
+    if (normalizePathForCompare(pendingOpenFiles[i]) === normalized) {
+      return;
     }
   }
-  return null;
+  pendingOpenFiles.push(resolved);
+}
+
+function focusMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
 }
 
 // 加载配置
@@ -69,21 +163,32 @@ async function cleanOrphanDrafts() {
     var dir = app.getPath('userData');
     var files = await fsPromises.readdir(dir);
     var now = Date.now();
+    var config = await loadConfig();
+    var activeDraftFiles = new Set();
+    var openTabs = Array.isArray(config && config.openTabs) ? config.openTabs : [];
+
+    for (var j = 0; j < openTabs.length; j++) {
+      var draftId = openTabs[j] && openTabs[j].draftId;
+      if (!draftId) continue;
+      activeDraftFiles.add(path.basename(getDraftPathByKey(draftId)));
+    }
+
     for (var i = 0; i < files.length; i++) {
       var f = files[i];
-      // 只处理 draft_tab_*.md 文件
-      if (!f.startsWith('draft_tab_') || !f.endsWith('.md')) continue;
+      var isLegacyDraft = /^draft_tab_.+\.md$/i.test(f);
+      var isHtmlDraft = /^draft_.+\.html$/i.test(f);
+      if (!isLegacyDraft && !isHtmlDraft) continue;
+      if (activeDraftFiles.has(f)) continue;
       var filePath = path.join(dir, f);
       try {
         var stat = await fsPromises.stat(filePath);
-        // 删除超过 7 天的草稿
         if (now - stat.mtimeMs > 7 * 24 * 3600 * 1000) {
           await fsPromises.unlink(filePath);
           console.log('[CLEAN] Deleted old draft:', f);
         }
-      } catch(_) {}
+      } catch (_) {}
     }
-  } catch(_) {}
+  } catch (_) {}
 }
 
 // 创建主窗口
@@ -106,6 +211,16 @@ async function createWindow() {
     titleBarStyle: 'default'
   });
 
+  rendererReady = false;
+
+  const startupTabs = await getStartupOpenTabs(config);
+  for (let i = 0; i < startupTabs.length; i++) {
+    const tab = startupTabs[i];
+    if (tab.filePath) {
+      enqueuePendingOpenFile(tab.filePath);
+    }
+  }
+
     // 加载HTML文件
   mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
 
@@ -114,6 +229,7 @@ async function createWindow() {
 
   // 渲染进程崩溃检测
   mainWindow.webContents.on('render-process-gone', function(event, details) {
+    rendererReady = false;
     console.error('[FATAL] Renderer crashed! Reason:', details.reason, 'Exit code:', details.exitCode);
   });
 
@@ -166,10 +282,38 @@ async function createWindow() {
   // 窗口关闭后清理
   mainWindow.on('closed', () => {
     mainWindow = null;
+    rendererReady = false;
   });
 
   // 设置菜单
   createMenu();
+}
+
+async function flushPendingOpenFiles() {
+  if (!rendererReady || !mainWindow || mainWindow.isDestroyed()) return;
+  if (openingPendingFiles) return;
+  openingPendingFiles = true;
+  try {
+    while (pendingOpenFiles.length > 0) {
+      const filePath = pendingOpenFiles.shift();
+      await openFile(filePath);
+    }
+  } finally {
+    openingPendingFiles = false;
+  }
+}
+
+async function openFilesInPrimaryWindow(filePaths) {
+  if (!filePaths || filePaths.length === 0) return;
+  for (let i = 0; i < filePaths.length; i++) {
+    enqueuePendingOpenFile(filePaths[i]);
+  }
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    await createWindow();
+    return;
+  }
+  focusMainWindow();
+  await flushPendingOpenFiles();
 }
 
 // 创建菜单
@@ -324,26 +468,30 @@ async function openFileDialog() {
 
 // 打开文件（在新标签中）
 async function openFile(filePath) {
-  // 只接受 Markdown/文本文件
-  var ext = path.extname(filePath).toLowerCase();
-  if (['.md', '.markdown', '.txt'].indexOf(ext) === -1) {
-    console.log('[MAIN] openFile skipped (not markdown):', filePath);
+  if (!filePath) return;
+  const resolvedPath = path.resolve(filePath);
+  if (!isOpenableFile(resolvedPath)) {
+    console.log('[MAIN] openFile skipped (not markdown):', resolvedPath);
+    return;
+  }
+  if (!rendererReady || !mainWindow || mainWindow.isDestroyed()) {
+    enqueuePendingOpenFile(resolvedPath);
     return;
   }
   try {
-    // 拒绝大于 5MB 的文件
-    var stat = await fsPromises.stat(filePath);
+    var stat = await fsPromises.stat(resolvedPath);
     if (stat.size > 5 * 1024 * 1024) {
       dialog.showErrorBox('文件过大', 'MDowner 不支持打开超过 5MB 的文件。');
       return;
     }
-    const content = await fsPromises.readFile(filePath, 'utf-8');
-    safeSend('open-file', { path: filePath, content });
+    const content = await fsPromises.readFile(resolvedPath, 'utf-8');
+    safeSend('open-file', { path: resolvedPath, content });
 
-    // 更新最近文件列表
     const config = await loadConfig();
-    config.recentFiles = [filePath, ...config.recentFiles.filter(f => f !== filePath)].slice(0, 10);
-    config.lastOpenedFile = filePath;
+    config.recentFiles = [resolvedPath, ...config.recentFiles.filter(function(f) {
+      return normalizePathForCompare(f) !== normalizePathForCompare(resolvedPath);
+    })].slice(0, 10);
+    config.lastOpenedFile = resolvedPath;
     await saveConfig(config);
   } catch (error) {
     dialog.showErrorBox('错误', `无法打开文件: ${error.message}`);
@@ -409,18 +557,55 @@ function updateTitle() {
   }
 }
 
+function getStartupOpenTabs(config) {
+  const openTabs = Array.isArray(config && config.openTabs) ? config.openTabs.slice() : [];
+  const seenDrafts = new Set();
+  const seenPaths = new Set();
+  const tabs = [];
+
+  for (let i = 0; i < openTabs.length; i++) {
+    const item = openTabs[i] || {};
+    const filePath = item.filePath ? path.resolve(item.filePath) : null;
+    const draftId = item.draftId || null;
+    const fileName = item.fileName || (filePath ? path.basename(filePath) : '未命名');
+    if (draftId) {
+      if (seenDrafts.has(draftId)) continue;
+      seenDrafts.add(draftId);
+    }
+    if (filePath) {
+      const normalized = normalizePathForCompare(filePath);
+      if (seenPaths.has(normalized)) continue;
+      seenPaths.add(normalized);
+    }
+    tabs.push({ filePath, fileName, draftId });
+  }
+
+  if (tabs.length === 0 && config && config.lastOpenedFile) {
+    const filePath = path.resolve(config.lastOpenedFile);
+    tabs.push({ filePath, fileName: path.basename(filePath), draftId: null });
+    seenPaths.add(normalizePathForCompare(filePath));
+  }
+
+  return listLegacyDrafts().then(function(legacyDrafts) {
+    for (let i = 0; i < legacyDrafts.length; i++) {
+      const item = legacyDrafts[i];
+      if (seenDrafts.has(item.draftId)) continue;
+      seenDrafts.add(item.draftId);
+      tabs.push({ filePath: null, fileName: item.fileName, draftId: item.draftId });
+    }
+    return tabs;
+  });
+}
+
 // 注册IPC处理程序
 function registerIPCHandlers() {
-  // 渲染进程就绪后，发送启动时通过命令行传入的文件
-  ipcMain.on('renderer-ready', () => {
-    const startupFile = getFileFromArgv(process.argv);
-    if (startupFile) {
-      openFile(startupFile);
-    }
+  ipcMain.on('renderer-ready', async () => {
+    rendererReady = true;
+    await flushPendingOpenFiles();
   });
+
   ipcMain.handle('get-content', async () => {
     if (!mainWindow || mainWindow.isDestroyed()) return '';
-    // 通过执行渲染进程的JS获取编辑器HTML内容，然后转换为Markdown
     try {
       const htmlContent = await mainWindow.webContents.executeJavaScript('document.querySelector(".ProseMirror")?.innerHTML || ""');
       return turndownService.turndown(htmlContent);
@@ -429,9 +614,12 @@ function registerIPCHandlers() {
     }
   });
 
-  ipcMain.handle('get-draft-path', (_, tabId) => {
-    var fileName = tabId ? 'draft_' + tabId + '.md' : 'draft.md';
-    return path.join(app.getPath('userData'), fileName);
+  ipcMain.handle('get-draft-path', (_, draftKey) => {
+    return getDraftPathByKey(draftKey);
+  });
+
+  ipcMain.handle('list-legacy-drafts', async () => {
+    return await listLegacyDrafts();
   });
 
   ipcMain.handle('delete-draft', async (_, draftPath) => {
@@ -762,9 +950,13 @@ function safeSend(channel, ...args) {
 }
 
 // 应用就绪
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   registerIPCHandlers();
-  createWindow();
+  const startupFiles = extractFilesFromArgv(process.argv);
+  await openFilesInPrimaryWindow(startupFiles);
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    await createWindow();
+  }
 });
 
 // 所有窗口关闭

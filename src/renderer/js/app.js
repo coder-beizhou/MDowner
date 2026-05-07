@@ -5,10 +5,10 @@ import { initTableOverlay, updateTableControls, insertTable, insertHr, addTableR
 import { initShortcuts, initDragDrop } from './shortcuts.js';
 import { initContextMenu } from './context-menu.js';
 import { insertLink, insertImage, initImagePaste } from './dialogs.js';
-import { newFile, openFile, setFileContent, getContent, saveDraft, exportPDF, exportDOCX } from './file-ops.js';
+import { newFile, openFile, setFileContent, getContent, saveDraft, saveDraftForTab, deleteDraftForTab, exportPDF, exportDOCX } from './file-ops.js';
 import { applyTheme, toggleTheme, initSidebar, toggleSidebar, scheduleOutlineUpdate, updateOutline, initStatusBar, updateStatusBar, applyConfig } from './ui.js';
 import { loadConfig, saveConfig } from './config.js';
-import { initTabBar, createTab, switchTab, closeTab, getActiveTab, nextTab, prevTab, updateTabBar, notifyModified, saveTabConfig } from './tabs.js';
+import { initTabBar, createTab, switchTab, closeTab, getActiveTab, nextTab, prevTab, updateTabBar, notifyModified, saveTabConfig, findTabByFilePath } from './tabs.js';
 
 class MDownerApp {
   constructor() {
@@ -66,56 +66,137 @@ class MDownerApp {
     if (openTabs.length === 0 && this.config.lastOpenedFile) {
       openTabs = [{ filePath: this.config.lastOpenedFile }];
     }
-    if (openTabs.length > 0) {
-      // 过滤非 Markdown 文件（防止 ZIP/exe 等二进制文件卡死渲染进程）
-      var mdExts = ['.md', '.markdown', '.txt'];
-      var filtered = openTabs.filter(function(t) {
-        var ext = t.filePath.slice(t.filePath.lastIndexOf('.')).toLowerCase();
-        return mdExts.indexOf(ext) !== -1;
-      });
-      if (filtered.length < openTabs.length) {
-        this.config.openTabs = filtered;
-        this.saveConfig();
-      }
-      // 并行读取，跳过不存在的
-      var validFiles = [];
-      var readPromises = filtered.map(function(tabInfo) {
-        return window.electronAPI.readFile(tabInfo.filePath).then(
-          function(content) { validFiles.push({ filePath: tabInfo.filePath, content: content }); },
-          function() { console.log('Tab restore skipped (file missing):', tabInfo.filePath); }
-        );
-      });
-      await Promise.all(readPromises);
 
-      // 更新 config，移除不存在的文件
-      if (validFiles.length < openTabs.length) {
-        this.config.openTabs = validFiles.map(function(f) { return { filePath: f.filePath }; });
-        this.saveConfig();
+    var restoredTabs = [];
+    var seenPaths = new Set();
+    var seenDrafts = new Set();
+
+    for (var i = 0; i < openTabs.length; i++) {
+      var tabInfo = openTabs[i] || {};
+      var draftId = tabInfo.draftId || null;
+      var filePath = tabInfo.filePath || null;
+      var fileName = tabInfo.fileName || (filePath ? filePath.split(/[/\\]/).pop() : '未命名');
+
+      if (draftId) {
+        if (seenDrafts.has(draftId)) continue;
+        seenDrafts.add(draftId);
       }
 
-      // 批量创建标签，不逐个切换
-      for (var i = 0; i < validFiles.length; i++) {
-        createTab(this, validFiles[i].filePath, validFiles[i].content, true);
+      if (filePath) {
+        var normalized = filePath.replace(/\\/g, '/').toLowerCase();
+        if (seenPaths.has(normalized)) continue;
+        seenPaths.add(normalized);
       }
 
-      // 一次性切换到上次的活动标签
+      var draftContent = null;
+      if (draftId && window.electronAPI) {
+        try {
+          var draftPath = await window.electronAPI.getDraftPath(draftId);
+          draftContent = await window.electronAPI.readFile(draftPath);
+        } catch (_) {}
+      }
+
+      if (draftContent) {
+        restoredTabs.push({
+          filePath: filePath,
+          fileName: fileName,
+          draftId: draftId,
+          content: draftContent,
+          isModified: true
+        });
+        continue;
+      }
+
+      if (filePath) {
+        try {
+          var content = await window.electronAPI.readFile(filePath);
+          restoredTabs.push({
+            filePath: filePath,
+            fileName: fileName,
+            draftId: draftId,
+            content: content,
+            isModified: false
+          });
+        } catch (_) {
+          console.log('Tab restore skipped (file missing):', filePath);
+        }
+      } else if (draftId) {
+        restoredTabs.push({
+          filePath: null,
+          fileName: fileName,
+          draftId: draftId,
+          content: '',
+          isModified: false
+        });
+      }
+    }
+
+    if (window.electronAPI && window.electronAPI.listLegacyDrafts) {
+      try {
+        var legacyDrafts = await window.electronAPI.listLegacyDrafts();
+        for (var k = 0; k < legacyDrafts.length; k++) {
+          var legacy = legacyDrafts[k] || {};
+          if (!legacy.draftId || seenDrafts.has(legacy.draftId)) continue;
+          seenDrafts.add(legacy.draftId);
+          try {
+            var legacyPath = await window.electronAPI.getDraftPath(legacy.draftId);
+            var legacyContent = await window.electronAPI.readFile(legacyPath);
+            restoredTabs.push({
+              filePath: null,
+              fileName: legacy.fileName || '恢复的草稿',
+              draftId: legacy.draftId,
+              content: legacyContent,
+              isModified: true
+            });
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
+
+    if (restoredTabs.length > 0) {
+      for (var j = 0; j < restoredTabs.length; j++) {
+        var tab = restoredTabs[j];
+        createTab(this, tab.filePath, tab.content, true, {
+          draftId: tab.draftId,
+          fileName: tab.fileName,
+          isModified: tab.isModified
+        });
+      }
+
       var idx = Math.min(this.config.activeTabIndex || 0, this.tabs.length - 1);
       if (idx >= 0 && this.tabs[idx]) {
-        switchTab(this, this.tabs[idx].id);
+        await switchTab(this, this.tabs[idx].id);
       }
       saveTabConfig(this);
     }
-    // 确保至少有一个空标签
+
     if (this.tabs.length === 0) {
       createTab(this);
     }
-    // 延迟刷新：等标签切换动画和 DOM 都稳定后再加载大纲
     var self = this;
     setTimeout(function() {
       self.updateOutline();
       self.updateStatusBar();
       self.updateToolbarState();
     }, 50);
+  }
+
+
+  async openFileInTab(path, content) {
+    var existing = findTabByFilePath(this, path);
+    if (existing) {
+      await switchTab(this, existing.id);
+      if (typeof content === 'string' && content !== '' && !existing.isModified) {
+        setFileContent(this, existing, content);
+      }
+      return existing;
+    }
+
+    var tabId = createTab(this, path, content, false, {
+      fileName: path ? path.split(/[/\\]/).pop() : '未命名',
+      isModified: false
+    });
+    return this.tabs.find(function(t) { return t.id === tabId; }) || null;
   }
 
   // 转发到各模块
@@ -142,13 +223,13 @@ class MDownerApp {
   initShortcuts() { initShortcuts(this); }
   initDragDrop() { initDragDrop(this); }
   newFile() { createTab(this); }
-  openFile(p, c) { createTab(this, p, c); }
+  openFile(p, c) { return this.openFileInTab(p, c); }
   setFileContent(p, c) { var t = getActiveTab(this); if (t) setFileContent(this, t, c); }
   getContent() { var t = getActiveTab(this); return t ? getContent(this) : ''; }
   saveDraft() { return saveDraft(this); }
   exportPDF(p) { return exportPDF(this, p); }
   exportDOCX(p) { return exportDOCX(this, p); }
-  switchTab(id) { switchTab(this, id); }
+  switchTab(id) { return switchTab(this, id); }
   closeActiveTab() { var t = getActiveTab(this); if (t) closeTab(this, t.id); }
   nextTab() { nextTab(this); }
   prevTab() { prevTab(this); }
@@ -198,7 +279,7 @@ class MDownerApp {
 
     var self = this;
     window.electronAPI.onNewFile(function() { createTab(self); });
-    window.electronAPI.onOpenFile(function(data) { createTab(self, data.path, data.content); });
+    window.electronAPI.onOpenFile(async function(data) { await self.openFileInTab(data.path, data.content); });
     window.electronAPI.onFileSaved(function() {
       var t = getActiveTab(self);
       if (t) { t.isModified = false; }
@@ -246,6 +327,7 @@ class MDownerApp {
       this.updateStatusBar();
       updateTabBar(this);
       window.electronAPI.contentSaved();
+      await deleteDraftForTab(this, tab);
       saveTabConfig(this);
       return true;
     }
@@ -279,6 +361,7 @@ class MDownerApp {
       this.updateStatusBar();
       updateTabBar(this);
       window.electronAPI.contentSaved();
+      await deleteDraftForTab(this, tab);
       saveTabConfig(this);
       return true;
     }
@@ -385,12 +468,13 @@ class MDownerApp {
           alert('保存「' + item.tab.fileName + '」失败: ' + e.message);
         }
       } else {
-        switchTab(this, item.tab.id);
+        await switchTab(this, item.tab.id);
         saved = await this.saveActiveTabAs(null);
       }
 
       if (!saved) return;
       item.tab.isModified = false;
+      await deleteDraftForTab(this, item.tab);
     }
     updateTabBar(this);
     saveTabConfig(this);

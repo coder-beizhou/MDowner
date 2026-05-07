@@ -2,6 +2,17 @@
 import { marked } from '../../../node_modules/marked/lib/marked.esm.js';
 import { getActiveTab } from './tabs.js';
 
+function getDraftKey(tab) {
+  return tab && (tab.draftId || tab.id);
+}
+
+async function getDraftPath(tab) {
+  if (!window.electronAPI || !tab) return null;
+  var draftKey = getDraftKey(tab);
+  if (!draftKey) return null;
+  return await window.electronAPI.getDraftPath(draftKey);
+}
+
 export function newFile(app) {
   // Handled by tabs.js:createTab
 }
@@ -14,13 +25,15 @@ export function openFile(app, path, content) {
 export function setFileContent(app, tab, content) {
   try {
     app._suppressContentChange = true;
-    var trimmed = (content || '').trim();
+    var raw = content || '';
+    var trimmed = raw.trim();
     if (trimmed && trimmed.startsWith('{') && trimmed.includes('"type":"doc"')) {
       tab.editor.commands.setContent(JSON.parse(trimmed));
+    } else if (trimmed && trimmed.startsWith('<') && /<(p|h[1-6]|ul|ol|li|pre|blockquote|table|img|hr|div|code)\b/i.test(trimmed)) {
+      tab.editor.commands.setContent(trimmed);
     } else {
-      tab.editor.commands.setContent(marked.parse(content || ''));
+      tab.editor.commands.setContent(marked.parse(raw));
     }
-    // 立即检测代码块语言（使用当前标签编辑器的实例方法）
     clearTimeout(app._autoDetectTimer);
     if (tab.editor && tab.editor._autoDetect) tab.editor._autoDetect();
   } catch (error) {
@@ -36,17 +49,37 @@ export function getContent(app) {
   return tab.editor.getHTML();
 }
 
-export async function saveDraft(app) {
-  var tab = getActiveTab(app);
-  if (!tab || !tab.editor || !app.isEditorReady) return;
-  if (!window.electronAPI) return;
+export async function saveDraftForTab(app, tab) {
+  if (!tab || !tab.editor || !app.isEditorReady) return false;
+  if (!window.electronAPI) return false;
   try {
     var html = tab.editor.getHTML();
-    var draftPath = await window.electronAPI.getDraftPath(tab.id);
+    var draftPath = await getDraftPath(tab);
+    if (!draftPath) return false;
     await window.electronAPI.writeFile(draftPath, html);
+    return true;
   } catch (error) {
     console.error('Failed to save draft:', error);
+    return false;
   }
+}
+
+export async function deleteDraftForTab(app, tab) {
+  if (!tab || !window.electronAPI) return false;
+  try {
+    var draftPath = await getDraftPath(tab);
+    if (!draftPath) return false;
+    await window.electronAPI.deleteDraft(draftPath);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+export async function saveDraft(app) {
+  var tab = getActiveTab(app);
+  if (!tab) return false;
+  return await saveDraftForTab(app, tab);
 }
 
 function showProgress(text) {

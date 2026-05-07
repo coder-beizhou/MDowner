@@ -1,10 +1,27 @@
 // 标签页管理
 import { initEditor } from './editor-core.js';
-import { setFileContent } from './file-ops.js';
+import { setFileContent, deleteDraftForTab, saveDraftForTab } from './file-ops.js';
 
 // 生成唯一标签ID
 function genTabId() {
   return 'tab_' + Math.random().toString(36).slice(2, 10);
+}
+
+function genDraftId() {
+  return 'draft_' + Math.random().toString(36).slice(2, 12);
+}
+
+export function normalizeFilePath(filePath) {
+  if (!filePath) return '';
+  return filePath.replace(/\\/g, '/').toLowerCase();
+}
+
+export function findTabByFilePath(app, filePath) {
+  var normalized = normalizeFilePath(filePath);
+  if (!normalized) return null;
+  return app.tabs.find(function(t) {
+    return normalizeFilePath(t.filePath) === normalized;
+  }) || null;
 }
 
 // 初始化标签栏 DOM
@@ -27,9 +44,10 @@ export function getActiveTab(app) {
 }
 
 // 创建新标签（noSwitch=true 时只创建不切换，批量恢复用）
-export function createTab(app, filePath, content, noSwitch) {
+export function createTab(app, filePath, content, noSwitch, options) {
+  options = options || {};
   var tabId = genTabId();
-  var fileName = filePath ? filePath.split(/[/\\]/).pop() : '未命名';
+  var fileName = options.fileName || (filePath ? filePath.split(/[/\\]/).pop() : '未命名');
 
   // 创建编辑器容器
   var wrapper = document.createElement('div');
@@ -49,9 +67,10 @@ export function createTab(app, filePath, content, noSwitch) {
 
   var tab = {
     id: tabId,
+    draftId: options.draftId || genDraftId(),
     filePath: filePath || null,
     fileName: fileName,
-    isModified: false,
+    isModified: !!options.isModified,
     editor: editor,
     editorEl: editorDiv,
     wrapperEl: wrapper
@@ -75,10 +94,13 @@ export function createTab(app, filePath, content, noSwitch) {
 }
 
 // 切换到指定标签
-export function switchTab(app, tabId) {
+export async function switchTab(app, tabId) {
   if (app.activeTabId === tabId) return;
 
   var oldTab = getActiveTab(app);
+  if (oldTab && oldTab.isModified) {
+    await saveDraftForTab(app, oldTab);
+  }
   if (oldTab && oldTab.wrapperEl) {
     oldTab.wrapperEl.style.display = 'none';
   }
@@ -132,6 +154,7 @@ export async function closeTab(app, tabId) {
         tab.fileName = saveResult.filePath.split(/[/\\]/).pop();
       }
       tab.isModified = false;
+      await deleteDraftForTab(app, tab);
     } else if (response === 2) {
       return; // 取消
     }
@@ -139,7 +162,7 @@ export async function closeTab(app, tabId) {
   }
 
   // 清理草稿文件
-  deleteDraft(tab.id);
+  await deleteDraftForTab(app, tab);
 
   // 销毁编辑器
   if (tab.editor) {
@@ -161,20 +184,11 @@ export async function closeTab(app, tabId) {
     createTab(app);
   } else if (app.activeTabId === tabId) {
     var newIdx = Math.min(idx, app.tabs.length - 1);
-    switchTab(app, app.tabs[newIdx].id);
+    await switchTab(app, app.tabs[newIdx].id);
   } else {
     updateTabBar(app);
     saveTabConfig(app);
   }
-}
-
-// 删除草稿文件
-async function deleteDraft(tabId) {
-  if (!window.electronAPI) return;
-  try {
-    var draftPath = await window.electronAPI.getDraftPath(tabId);
-    await window.electronAPI.deleteDraft(draftPath);
-  } catch(_) {}
 }
 
 // 下一个标签
@@ -316,11 +330,11 @@ async function closeAllTabs(app) {
 }
 
 // 静默关闭（不弹保存窗，用于已保存/未修改标签）
-function closeTabSilent(app, tabId) {
+async function closeTabSilent(app, tabId) {
   var tab = app.tabs.find(function(t) { return t.id === tabId; });
   if (!tab) return;
   if (tab.isModified) return; // 防御：已修改标签必须走 closeTab 弹窗确认
-  deleteDraft(tabId);
+  await deleteDraftForTab(app, tab);
   if (tab.editor) tab.editor.destroy();
   if (tab.wrapperEl && tab.wrapperEl.parentNode) tab.wrapperEl.parentNode.removeChild(tab.wrapperEl);
   var idx = app.tabs.indexOf(tab);
@@ -329,7 +343,7 @@ function closeTabSilent(app, tabId) {
     createTab(app);
   } else if (app.activeTabId === tabId) {
     var newIdx = Math.min(idx, app.tabs.length - 1);
-    if (app.tabs[newIdx]) switchTab(app, app.tabs[newIdx].id);
+    if (app.tabs[newIdx]) await switchTab(app, app.tabs[newIdx].id);
   } else {
     updateTabBar(app);
     saveTabConfig(app);
@@ -360,9 +374,13 @@ export function notifyModified(app) {
 // 保存标签配置
 export function saveTabConfig(app) {
   if (!app.config) return;
-  app.config.openTabs = app.tabs
-    .filter(function(t) { return t.filePath; })
-    .map(function(t) { return { filePath: t.filePath }; });
+  app.config.openTabs = app.tabs.map(function(t) {
+    return {
+      filePath: t.filePath || null,
+      fileName: t.fileName,
+      draftId: t.draftId
+    };
+  });
   app.config.activeTabIndex = app.tabs.indexOf(getActiveTab(app));
   app.saveConfig();
 }

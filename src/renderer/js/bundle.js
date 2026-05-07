@@ -40592,6 +40592,20 @@ ${content}</tr>
   function genTabId() {
     return "tab_" + Math.random().toString(36).slice(2, 10);
   }
+  function genDraftId() {
+    return "draft_" + Math.random().toString(36).slice(2, 12);
+  }
+  function normalizeFilePath(filePath) {
+    if (!filePath) return "";
+    return filePath.replace(/\\/g, "/").toLowerCase();
+  }
+  function findTabByFilePath(app, filePath) {
+    var normalized = normalizeFilePath(filePath);
+    if (!normalized) return null;
+    return app.tabs.find(function(t) {
+      return normalizeFilePath(t.filePath) === normalized;
+    }) || null;
+  }
   function initTabBar(app) {
     var tabBar = document.getElementById("tab-bar");
     if (tabBar && !tabBar._mdownerContextMenuBound) {
@@ -40609,9 +40623,10 @@ ${content}</tr>
       return t.id === app.activeTabId;
     }) || null;
   }
-  function createTab(app, filePath, content, noSwitch) {
+  function createTab(app, filePath, content, noSwitch, options2) {
+    options2 = options2 || {};
     var tabId = genTabId();
-    var fileName = filePath ? filePath.split(/[/\\]/).pop() : "\u672A\u547D\u540D";
+    var fileName = options2.fileName || (filePath ? filePath.split(/[/\\]/).pop() : "\u672A\u547D\u540D");
     var wrapper = document.createElement("div");
     wrapper.id = "tab-wrapper-" + tabId;
     wrapper.style.display = "none";
@@ -40624,9 +40639,10 @@ ${content}</tr>
     var editor = initEditor(app, editorDiv, tabId);
     var tab = {
       id: tabId,
+      draftId: options2.draftId || genDraftId(),
       filePath: filePath || null,
       fileName,
-      isModified: false,
+      isModified: !!options2.isModified,
       editor,
       editorEl: editorDiv,
       wrapperEl: wrapper
@@ -40642,9 +40658,12 @@ ${content}</tr>
     if (!noSwitch) saveTabConfig(app);
     return tabId;
   }
-  function switchTab(app, tabId) {
+  async function switchTab(app, tabId) {
     if (app.activeTabId === tabId) return;
     var oldTab = getActiveTab(app);
+    if (oldTab && oldTab.isModified) {
+      await saveDraftForTab(app, oldTab);
+    }
     if (oldTab && oldTab.wrapperEl) {
       oldTab.wrapperEl.style.display = "none";
     }
@@ -40692,11 +40711,12 @@ ${content}</tr>
           tab.fileName = saveResult.filePath.split(/[/\\]/).pop();
         }
         tab.isModified = false;
+        await deleteDraftForTab(app, tab);
       } else if (response === 2) {
         return;
       }
     }
-    deleteDraft(tab.id);
+    await deleteDraftForTab(app, tab);
     if (tab.editor) {
       tab.editor.destroy();
     }
@@ -40709,18 +40729,10 @@ ${content}</tr>
       createTab(app);
     } else if (app.activeTabId === tabId) {
       var newIdx = Math.min(idx, app.tabs.length - 1);
-      switchTab(app, app.tabs[newIdx].id);
+      await switchTab(app, app.tabs[newIdx].id);
     } else {
       updateTabBar(app);
       saveTabConfig(app);
-    }
-  }
-  async function deleteDraft(tabId) {
-    if (!window.electronAPI) return;
-    try {
-      var draftPath = await window.electronAPI.getDraftPath(tabId);
-      await window.electronAPI.deleteDraft(draftPath);
-    } catch (_) {
     }
   }
   function nextTab(app) {
@@ -40834,13 +40846,13 @@ ${content}</tr>
       await closeTab(app, all[i].id);
     }
   }
-  function closeTabSilent(app, tabId) {
+  async function closeTabSilent(app, tabId) {
     var tab = app.tabs.find(function(t) {
       return t.id === tabId;
     });
     if (!tab) return;
     if (tab.isModified) return;
-    deleteDraft(tabId);
+    await deleteDraftForTab(app, tab);
     if (tab.editor) tab.editor.destroy();
     if (tab.wrapperEl && tab.wrapperEl.parentNode) tab.wrapperEl.parentNode.removeChild(tab.wrapperEl);
     var idx = app.tabs.indexOf(tab);
@@ -40849,7 +40861,7 @@ ${content}</tr>
       createTab(app);
     } else if (app.activeTabId === tabId) {
       var newIdx = Math.min(idx, app.tabs.length - 1);
-      if (app.tabs[newIdx]) switchTab(app, app.tabs[newIdx].id);
+      if (app.tabs[newIdx]) await switchTab(app, app.tabs[newIdx].id);
     } else {
       updateTabBar(app);
       saveTabConfig(app);
@@ -40874,10 +40886,12 @@ ${content}</tr>
   }
   function saveTabConfig(app) {
     if (!app.config) return;
-    app.config.openTabs = app.tabs.filter(function(t) {
-      return t.filePath;
-    }).map(function(t) {
-      return { filePath: t.filePath };
+    app.config.openTabs = app.tabs.map(function(t) {
+      return {
+        filePath: t.filePath || null,
+        fileName: t.fileName,
+        draftId: t.draftId
+      };
     });
     app.config.activeTabIndex = app.tabs.indexOf(getActiveTab(app));
     app.saveConfig();
@@ -40890,14 +40904,26 @@ ${content}</tr>
   });
 
   // src/renderer/js/file-ops.js
+  function getDraftKey(tab) {
+    return tab && (tab.draftId || tab.id);
+  }
+  async function getDraftPath(tab) {
+    if (!window.electronAPI || !tab) return null;
+    var draftKey = getDraftKey(tab);
+    if (!draftKey) return null;
+    return await window.electronAPI.getDraftPath(draftKey);
+  }
   function setFileContent(app, tab, content) {
     try {
       app._suppressContentChange = true;
-      var trimmed = (content || "").trim();
+      var raw = content || "";
+      var trimmed = raw.trim();
       if (trimmed && trimmed.startsWith("{") && trimmed.includes('"type":"doc"')) {
         tab.editor.commands.setContent(JSON.parse(trimmed));
+      } else if (trimmed && trimmed.startsWith("<") && /<(p|h[1-6]|ul|ol|li|pre|blockquote|table|img|hr|div|code)\b/i.test(trimmed)) {
+        tab.editor.commands.setContent(trimmed);
       } else {
-        tab.editor.commands.setContent(marked.parse(content || ""));
+        tab.editor.commands.setContent(marked.parse(raw));
       }
       clearTimeout(app._autoDetectTimer);
       if (tab.editor && tab.editor._autoDetect) tab.editor._autoDetect();
@@ -40912,17 +40938,35 @@ ${content}</tr>
     if (!tab || !tab.editor || !app.isEditorReady) return "";
     return tab.editor.getHTML();
   }
-  async function saveDraft(app) {
-    var tab = getActiveTab(app);
-    if (!tab || !tab.editor || !app.isEditorReady) return;
-    if (!window.electronAPI) return;
+  async function saveDraftForTab(app, tab) {
+    if (!tab || !tab.editor || !app.isEditorReady) return false;
+    if (!window.electronAPI) return false;
     try {
       var html2 = tab.editor.getHTML();
-      var draftPath = await window.electronAPI.getDraftPath(tab.id);
+      var draftPath = await getDraftPath(tab);
+      if (!draftPath) return false;
       await window.electronAPI.writeFile(draftPath, html2);
+      return true;
     } catch (error) {
       console.error("Failed to save draft:", error);
+      return false;
     }
+  }
+  async function deleteDraftForTab(app, tab) {
+    if (!tab || !window.electronAPI) return false;
+    try {
+      var draftPath = await getDraftPath(tab);
+      if (!draftPath) return false;
+      await window.electronAPI.deleteDraft(draftPath);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+  async function saveDraft(app) {
+    var tab = getActiveTab(app);
+    if (!tab) return false;
+    return await saveDraftForTab(app, tab);
   }
   function showProgress(text) {
     var el = document.createElement("div");
@@ -41209,40 +41253,99 @@ ${content}</tr>
           if (openTabs.length === 0 && this.config.lastOpenedFile) {
             openTabs = [{ filePath: this.config.lastOpenedFile }];
           }
-          if (openTabs.length > 0) {
-            var mdExts = [".md", ".markdown", ".txt"];
-            var filtered = openTabs.filter(function(t) {
-              var ext = t.filePath.slice(t.filePath.lastIndexOf(".")).toLowerCase();
-              return mdExts.indexOf(ext) !== -1;
-            });
-            if (filtered.length < openTabs.length) {
-              this.config.openTabs = filtered;
-              this.saveConfig();
+          var restoredTabs = [];
+          var seenPaths = /* @__PURE__ */ new Set();
+          var seenDrafts = /* @__PURE__ */ new Set();
+          for (var i = 0; i < openTabs.length; i++) {
+            var tabInfo = openTabs[i] || {};
+            var draftId = tabInfo.draftId || null;
+            var filePath = tabInfo.filePath || null;
+            var fileName = tabInfo.fileName || (filePath ? filePath.split(/[/\\]/).pop() : "\u672A\u547D\u540D");
+            if (draftId) {
+              if (seenDrafts.has(draftId)) continue;
+              seenDrafts.add(draftId);
             }
-            var validFiles = [];
-            var readPromises = filtered.map(function(tabInfo) {
-              return window.electronAPI.readFile(tabInfo.filePath).then(
-                function(content) {
-                  validFiles.push({ filePath: tabInfo.filePath, content });
-                },
-                function() {
-                  console.log("Tab restore skipped (file missing):", tabInfo.filePath);
-                }
-              );
-            });
-            await Promise.all(readPromises);
-            if (validFiles.length < openTabs.length) {
-              this.config.openTabs = validFiles.map(function(f) {
-                return { filePath: f.filePath };
+            if (filePath) {
+              var normalized = filePath.replace(/\\/g, "/").toLowerCase();
+              if (seenPaths.has(normalized)) continue;
+              seenPaths.add(normalized);
+            }
+            var draftContent = null;
+            if (draftId && window.electronAPI) {
+              try {
+                var draftPath = await window.electronAPI.getDraftPath(draftId);
+                draftContent = await window.electronAPI.readFile(draftPath);
+              } catch (_) {
+              }
+            }
+            if (draftContent) {
+              restoredTabs.push({
+                filePath,
+                fileName,
+                draftId,
+                content: draftContent,
+                isModified: true
               });
-              this.saveConfig();
+              continue;
             }
-            for (var i = 0; i < validFiles.length; i++) {
-              createTab(this, validFiles[i].filePath, validFiles[i].content, true);
+            if (filePath) {
+              try {
+                var content = await window.electronAPI.readFile(filePath);
+                restoredTabs.push({
+                  filePath,
+                  fileName,
+                  draftId,
+                  content,
+                  isModified: false
+                });
+              } catch (_) {
+                console.log("Tab restore skipped (file missing):", filePath);
+              }
+            } else if (draftId) {
+              restoredTabs.push({
+                filePath: null,
+                fileName,
+                draftId,
+                content: "",
+                isModified: false
+              });
+            }
+          }
+          if (window.electronAPI && window.electronAPI.listLegacyDrafts) {
+            try {
+              var legacyDrafts = await window.electronAPI.listLegacyDrafts();
+              for (var k = 0; k < legacyDrafts.length; k++) {
+                var legacy = legacyDrafts[k] || {};
+                if (!legacy.draftId || seenDrafts.has(legacy.draftId)) continue;
+                seenDrafts.add(legacy.draftId);
+                try {
+                  var legacyPath = await window.electronAPI.getDraftPath(legacy.draftId);
+                  var legacyContent = await window.electronAPI.readFile(legacyPath);
+                  restoredTabs.push({
+                    filePath: null,
+                    fileName: legacy.fileName || "\u6062\u590D\u7684\u8349\u7A3F",
+                    draftId: legacy.draftId,
+                    content: legacyContent,
+                    isModified: true
+                  });
+                } catch (_) {
+                }
+              }
+            } catch (_) {
+            }
+          }
+          if (restoredTabs.length > 0) {
+            for (var j = 0; j < restoredTabs.length; j++) {
+              var tab = restoredTabs[j];
+              createTab(this, tab.filePath, tab.content, true, {
+                draftId: tab.draftId,
+                fileName: tab.fileName,
+                isModified: tab.isModified
+              });
             }
             var idx = Math.min(this.config.activeTabIndex || 0, this.tabs.length - 1);
             if (idx >= 0 && this.tabs[idx]) {
-              switchTab(this, this.tabs[idx].id);
+              await switchTab(this, this.tabs[idx].id);
             }
             saveTabConfig(this);
           }
@@ -41255,6 +41358,23 @@ ${content}</tr>
             self.updateStatusBar();
             self.updateToolbarState();
           }, 50);
+        }
+        async openFileInTab(path, content) {
+          var existing = findTabByFilePath(this, path);
+          if (existing) {
+            await switchTab(this, existing.id);
+            if (typeof content === "string" && content !== "" && !existing.isModified) {
+              setFileContent(this, existing, content);
+            }
+            return existing;
+          }
+          var tabId = createTab(this, path, content, false, {
+            fileName: path ? path.split(/[/\\]/).pop() : "\u672A\u547D\u540D",
+            isModified: false
+          });
+          return this.tabs.find(function(t) {
+            return t.id === tabId;
+          }) || null;
         }
         // 转发到各模块
         initEditor() {
@@ -41326,7 +41446,7 @@ ${content}</tr>
           createTab(this);
         }
         openFile(p, c) {
-          createTab(this, p, c);
+          return this.openFileInTab(p, c);
         }
         setFileContent(p, c) {
           var t = getActiveTab(this);
@@ -41346,7 +41466,7 @@ ${content}</tr>
           return exportDOCX(this, p);
         }
         switchTab(id) {
-          switchTab(this, id);
+          return switchTab(this, id);
         }
         closeActiveTab() {
           var t = getActiveTab(this);
@@ -41431,8 +41551,8 @@ ${content}</tr>
           window.electronAPI.onNewFile(function() {
             createTab(self);
           });
-          window.electronAPI.onOpenFile(function(data) {
-            createTab(self, data.path, data.content);
+          window.electronAPI.onOpenFile(async function(data) {
+            await self.openFileInTab(data.path, data.content);
           });
           window.electronAPI.onFileSaved(function() {
             var t = getActiveTab(self);
@@ -41499,6 +41619,7 @@ ${content}</tr>
             this.updateStatusBar();
             updateTabBar(this);
             window.electronAPI.contentSaved();
+            await deleteDraftForTab(this, tab);
             saveTabConfig(this);
             return true;
           }
@@ -41529,6 +41650,7 @@ ${content}</tr>
             this.updateStatusBar();
             updateTabBar(this);
             window.electronAPI.contentSaved();
+            await deleteDraftForTab(this, tab);
             saveTabConfig(this);
             return true;
           }
@@ -41631,11 +41753,12 @@ ${content}</tr>
                 alert("\u4FDD\u5B58\u300C" + item.tab.fileName + "\u300D\u5931\u8D25: " + e.message);
               }
             } else {
-              switchTab(this, item.tab.id);
+              await switchTab(this, item.tab.id);
               saved = await this.saveActiveTabAs(null);
             }
             if (!saved) return;
             item.tab.isModified = false;
+            await deleteDraftForTab(this, item.tab);
           }
           updateTabBar(this);
           saveTabConfig(this);
