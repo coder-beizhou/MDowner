@@ -156,15 +156,6 @@ class MDownerApp {
         } catch (_) {
           console.log('Tab restore skipped (file missing):', filePath);
         }
-      } else if (draftId) {
-        restoredTabs.push({
-          filePath: null,
-          fileName: fileName,
-          draftId: draftId,
-          content: '',
-          isModified: false,
-          migrateDraft: false
-        });
       }
     }
 
@@ -190,13 +181,20 @@ class MDownerApp {
     }
 
     if (restoredTabs.length > 0) {
+      var migratedTabs = [];
       for (var j = 0; j < restoredTabs.length; j++) {
         var tab = restoredTabs[j];
-        createTab(this, tab.filePath, tab.content, true, {
+        var tabId = createTab(this, tab.filePath, tab.content, true, {
           draftId: tab.draftId,
           fileName: tab.fileName,
           isModified: tab.isModified
         });
+        if (tab.migrateDraft) {
+          var createdTab = this.tabs.find(function(t) { return t.id === tabId; }) || null;
+          if (createdTab && createdTab.isModified) {
+            migratedTabs.push(createdTab);
+          }
+        }
       }
 
       var idx = Math.min(this.config.activeTabIndex || 0, this.tabs.length - 1);
@@ -205,15 +203,15 @@ class MDownerApp {
       }
       saveTabConfig(this);
 
-      for (var m = 0; m < restoredTabs.length; m++) {
-        if (!restoredTabs[m].migrateDraft || !this.tabs[m] || !this.tabs[m].isModified) continue;
-        await saveDraftForTab(this, this.tabs[m]);
+      for (var m = 0; m < migratedTabs.length; m++) {
+        await saveDraftForTab(this, migratedTabs[m]);
       }
     }
 
     if (this.tabs.length === 0) {
       createTab(this);
     }
+    this.syncUnsavedState();
     var self = this;
     setTimeout(function() {
       self.updateOutline();
@@ -304,6 +302,7 @@ class MDownerApp {
           });
         }
       }
+      this.syncUnsavedState();
     }
     if (this.config.autoSave) { this.scheduleAutoSave(); }
   }
@@ -354,12 +353,24 @@ class MDownerApp {
     window.electronAPI.onFileSaveAs(function(filePath) { self.saveActiveTabAs(filePath); });
   }
 
-  // 保存活动标签
-  async saveActiveTab() {
-    var tab = getActiveTab(this);
-    if (!tab) return false;
+  syncUnsavedState() {
+    if (!window.electronAPI) return;
+    var hasUnsaved = this.tabs.some(function(t) { return !!t.isModified; });
+    if (window.electronAPI.syncUnsavedState) {
+      window.electronAPI.syncUnsavedState(hasUnsaved);
+      return;
+    }
+    if (hasUnsaved) {
+      window.electronAPI.contentModified();
+    } else {
+      window.electronAPI.contentSaved();
+    }
+  }
+
+  async saveTab(tab) {
+    if (!tab || !tab.editor || !window.electronAPI) return false;
     if (!tab.filePath) {
-      return await this.saveActiveTabAs(null);
+      return await this.saveTabAs(tab, null);
     }
     var html = tab.editor.getHTML();
     var result = await window.electronAPI.saveFile(tab.filePath, html);
@@ -367,21 +378,20 @@ class MDownerApp {
       tab.isModified = false;
       this.updateStatusBar();
       updateTabBar(this);
-      window.electronAPI.contentSaved();
       await deleteDraftForTab(this, tab);
       saveTabConfig(this);
+      this.syncUnsavedState();
       return true;
     }
     var message = result && result.error ? result.error : '未知错误';
     console.error('Save failed:', message);
     alert('保存失败: ' + message);
+    this.syncUnsavedState();
     return false;
   }
 
-  // 另存为活动标签
-  async saveActiveTabAs(filePath) {
-    var tab = getActiveTab(this);
-    if (!tab) return false;
+  async saveTabAs(tab, filePath) {
+    if (!tab || !tab.editor || !window.electronAPI) return false;
 
     var targetPath = filePath;
     if (!targetPath) {
@@ -401,16 +411,31 @@ class MDownerApp {
       tab.isModified = false;
       this.updateStatusBar();
       updateTabBar(this);
-      window.electronAPI.contentSaved();
       await deleteDraftForTab(this, tab);
       saveTabConfig(this);
+      this.syncUnsavedState();
       return true;
     }
 
     var message = result && result.error ? result.error : '未知错误';
     console.error('Save as failed:', message);
     alert('保存失败: ' + message);
+    this.syncUnsavedState();
     return false;
+  }
+
+  // 保存活动标签
+  async saveActiveTab() {
+    var tab = getActiveTab(this);
+    if (!tab) return false;
+    return await this.saveTab(tab);
+  }
+
+  // 另存为活动标签
+  async saveActiveTabAs(filePath) {
+    var tab = getActiveTab(this);
+    if (!tab) return false;
+    return await this.saveTabAs(tab, filePath);
   }
 
   // 关闭前逐个选择保存——自定义弹窗
@@ -419,6 +444,7 @@ class MDownerApp {
     var unsaved = this.tabs.filter(function(t) { return t.isModified; });
     if (unsaved.length === 0) {
       saveTabConfig(this);
+      this.syncUnsavedState();
       window.electronAPI.allTabsSavedClose();
       return;
     }
@@ -487,38 +513,34 @@ class MDownerApp {
     });
 
     if (!saveList) return; // 取消
-    if (saveList === 'nosave') { saveList = { items: [] }; }
+    if (saveList === 'nosave') {
+      this.syncUnsavedState();
+      window.electronAPI.allTabsSavedClose();
+      return;
+    }
 
-    // 保存勾选的标签
+    var failedTabs = [];
+
     for (var i = 0; i < saveList.items.length; i++) {
       var item = saveList.items[i];
       if (!item.cb.checked) continue;
-
-      var saved = false;
-      if (item.tab.filePath) {
-        try {
-          var html = item.tab.editor.getHTML();
-          var result = await window.electronAPI.saveFile(item.tab.filePath, html);
-          saved = !!(result && result.success);
-          if (!saved) {
-            var message = result && result.error ? result.error : '未知错误';
-            alert('保存「' + item.tab.fileName + '」失败: ' + message);
-          }
-        } catch(e) {
-          console.error('Save failed:', item.tab.fileName, e);
-          alert('保存「' + item.tab.fileName + '」失败: ' + e.message);
-        }
-      } else {
-        await switchTab(this, item.tab.id);
-        saved = await this.saveActiveTabAs(null);
+      var saved = item.tab.filePath
+        ? await this.saveTab(item.tab)
+        : await this.saveTabAs(item.tab, null);
+      if (!saved) {
+        failedTabs.push(item.tab.fileName);
       }
-
-      if (!saved) return;
-      item.tab.isModified = false;
-      await deleteDraftForTab(this, item.tab);
     }
+
     updateTabBar(this);
     saveTabConfig(this);
+    this.syncUnsavedState();
+
+    if (failedTabs.length > 0) {
+      alert('以下标签保存失败，窗口未关闭：\n' + failedTabs.join('\n'));
+      return;
+    }
+
     window.electronAPI.allTabsSavedClose();
   }
 }

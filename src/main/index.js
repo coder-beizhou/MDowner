@@ -950,7 +950,14 @@ function registerIPCHandlers() {
   });
 
   ipcMain.on('content-saved', () => {
+    hasUnsavedTabs = false;
     if (activeTabInfo) activeTabInfo.isModified = false;
+    updateTitle();
+  });
+
+  ipcMain.on('sync-unsaved-state', (_, hasUnsaved) => {
+    hasUnsavedTabs = !!hasUnsaved;
+    if (activeTabInfo && !hasUnsavedTabs) activeTabInfo.isModified = false;
     updateTitle();
   });
 

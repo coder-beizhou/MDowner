@@ -129,32 +129,8 @@ export async function closeTab(app, tabId) {
   if (tab.isModified && window.electronAPI) {
     var response = await window.electronAPI.showSaveDialog(tab.fileName);
     if (response === 0) {
-      // 保存
-      if (tab.filePath) {
-        var result = await window.electronAPI.saveFile(tab.filePath, tab.editor.getHTML());
-        if (!result || !result.success) {
-          var message = result && result.error ? result.error : '未知错误';
-          alert('保存「' + tab.fileName + '」失败: ' + message);
-          return;
-        }
-      } else {
-        // 无路径，触发另存为
-        var saveResult = await window.electronAPI.saveFileDialog({
-          filters: [{ name: 'Markdown文件', extensions: ['md'] }],
-          defaultPath: tab.fileName
-        });
-        if (saveResult.canceled || !saveResult.filePath) return;
-        var saveAsResult = await window.electronAPI.saveFile(saveResult.filePath, tab.editor.getHTML());
-        if (!saveAsResult || !saveAsResult.success) {
-          var saveAsMessage = saveAsResult && saveAsResult.error ? saveAsResult.error : '未知错误';
-          alert('保存「' + tab.fileName + '」失败: ' + saveAsMessage);
-          return;
-        }
-        tab.filePath = saveResult.filePath;
-        tab.fileName = saveResult.filePath.split(/[/\\]/).pop();
-      }
-      tab.isModified = false;
-      await deleteDraftForTab(app, tab);
+      var saved = await app.saveTab(tab);
+      if (!saved) return;
     } else if (response === 2) {
       return; // 取消
     }

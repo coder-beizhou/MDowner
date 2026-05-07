@@ -93,6 +93,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 // 事件发送
   contentModified: () => ipcRenderer.send('content-modified'),
   contentSaved: () => ipcRenderer.send('content-saved'),
+  syncUnsavedState: (hasUnsaved) => ipcRenderer.send('sync-unsaved-state', hasUnsaved),
   activeTabChanged: (info) => ipcRenderer.send('active-tab-changed', info),
   allTabsSavedClose: () => ipcRenderer.send('all-tabs-saved-close'),
   selectionChanged: (hasSelection) => ipcRenderer.send('selection-changed', hasSelection),

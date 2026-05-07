@@ -40688,30 +40688,8 @@ ${content}</tr>
     if (tab.isModified && window.electronAPI) {
       var response = await window.electronAPI.showSaveDialog(tab.fileName);
       if (response === 0) {
-        if (tab.filePath) {
-          var result = await window.electronAPI.saveFile(tab.filePath, tab.editor.getHTML());
-          if (!result || !result.success) {
-            var message = result && result.error ? result.error : "\u672A\u77E5\u9519\u8BEF";
-            alert("\u4FDD\u5B58\u300C" + tab.fileName + "\u300D\u5931\u8D25: " + message);
-            return;
-          }
-        } else {
-          var saveResult = await window.electronAPI.saveFileDialog({
-            filters: [{ name: "Markdown\u6587\u4EF6", extensions: ["md"] }],
-            defaultPath: tab.fileName
-          });
-          if (saveResult.canceled || !saveResult.filePath) return;
-          var saveAsResult = await window.electronAPI.saveFile(saveResult.filePath, tab.editor.getHTML());
-          if (!saveAsResult || !saveAsResult.success) {
-            var saveAsMessage = saveAsResult && saveAsResult.error ? saveAsResult.error : "\u672A\u77E5\u9519\u8BEF";
-            alert("\u4FDD\u5B58\u300C" + tab.fileName + "\u300D\u5931\u8D25: " + saveAsMessage);
-            return;
-          }
-          tab.filePath = saveResult.filePath;
-          tab.fileName = saveResult.filePath.split(/[/\\]/).pop();
-        }
-        tab.isModified = false;
-        await deleteDraftForTab(app, tab);
+        var saved = await app.saveTab(tab);
+        if (!saved) return;
       } else if (response === 2) {
         return;
       }
@@ -41346,15 +41324,6 @@ ${content}</tr>
               } catch (_) {
                 console.log("Tab restore skipped (file missing):", filePath);
               }
-            } else if (draftId) {
-              restoredTabs.push({
-                filePath: null,
-                fileName,
-                draftId,
-                content: "",
-                isModified: false,
-                migrateDraft: false
-              });
             }
           }
           if (window.electronAPI && window.electronAPI.listLegacyDrafts) {
@@ -41379,27 +41348,36 @@ ${content}</tr>
             }
           }
           if (restoredTabs.length > 0) {
+            var migratedTabs = [];
             for (var j = 0; j < restoredTabs.length; j++) {
               var tab = restoredTabs[j];
-              createTab(this, tab.filePath, tab.content, true, {
+              var tabId = createTab(this, tab.filePath, tab.content, true, {
                 draftId: tab.draftId,
                 fileName: tab.fileName,
                 isModified: tab.isModified
               });
+              if (tab.migrateDraft) {
+                var createdTab = this.tabs.find(function(t) {
+                  return t.id === tabId;
+                }) || null;
+                if (createdTab && createdTab.isModified) {
+                  migratedTabs.push(createdTab);
+                }
+              }
             }
             var idx = Math.min(this.config.activeTabIndex || 0, this.tabs.length - 1);
             if (idx >= 0 && this.tabs[idx]) {
               await switchTab(this, this.tabs[idx].id);
             }
             saveTabConfig(this);
-            for (var m = 0; m < restoredTabs.length; m++) {
-              if (!restoredTabs[m].migrateDraft || !this.tabs[m] || !this.tabs[m].isModified) continue;
-              await saveDraftForTab(this, this.tabs[m]);
+            for (var m = 0; m < migratedTabs.length; m++) {
+              await saveDraftForTab(this, migratedTabs[m]);
             }
           }
           if (this.tabs.length === 0) {
             createTab(this);
           }
+          this.syncUnsavedState();
           var self = this;
           setTimeout(function() {
             self.updateOutline();
@@ -41577,6 +41555,7 @@ ${content}</tr>
                 });
               }
             }
+            this.syncUnsavedState();
           }
           if (this.config.autoSave) {
             this.scheduleAutoSave();
@@ -41653,12 +41632,25 @@ ${content}</tr>
             self.saveActiveTabAs(filePath);
           });
         }
-        // 保存活动标签
-        async saveActiveTab() {
-          var tab = getActiveTab(this);
-          if (!tab) return false;
+        syncUnsavedState() {
+          if (!window.electronAPI) return;
+          var hasUnsaved = this.tabs.some(function(t) {
+            return !!t.isModified;
+          });
+          if (window.electronAPI.syncUnsavedState) {
+            window.electronAPI.syncUnsavedState(hasUnsaved);
+            return;
+          }
+          if (hasUnsaved) {
+            window.electronAPI.contentModified();
+          } else {
+            window.electronAPI.contentSaved();
+          }
+        }
+        async saveTab(tab) {
+          if (!tab || !tab.editor || !window.electronAPI) return false;
           if (!tab.filePath) {
-            return await this.saveActiveTabAs(null);
+            return await this.saveTabAs(tab, null);
           }
           var html2 = tab.editor.getHTML();
           var result = await window.electronAPI.saveFile(tab.filePath, html2);
@@ -41666,20 +41658,19 @@ ${content}</tr>
             tab.isModified = false;
             this.updateStatusBar();
             updateTabBar(this);
-            window.electronAPI.contentSaved();
             await deleteDraftForTab(this, tab);
             saveTabConfig(this);
+            this.syncUnsavedState();
             return true;
           }
           var message = result && result.error ? result.error : "\u672A\u77E5\u9519\u8BEF";
           console.error("Save failed:", message);
           alert("\u4FDD\u5B58\u5931\u8D25: " + message);
+          this.syncUnsavedState();
           return false;
         }
-        // 另存为活动标签
-        async saveActiveTabAs(filePath) {
-          var tab = getActiveTab(this);
-          if (!tab) return false;
+        async saveTabAs(tab, filePath) {
+          if (!tab || !tab.editor || !window.electronAPI) return false;
           var targetPath = filePath;
           if (!targetPath) {
             var saveResult = await window.electronAPI.saveFileDialog({
@@ -41697,15 +41688,28 @@ ${content}</tr>
             tab.isModified = false;
             this.updateStatusBar();
             updateTabBar(this);
-            window.electronAPI.contentSaved();
             await deleteDraftForTab(this, tab);
             saveTabConfig(this);
+            this.syncUnsavedState();
             return true;
           }
           var message = result && result.error ? result.error : "\u672A\u77E5\u9519\u8BEF";
           console.error("Save as failed:", message);
           alert("\u4FDD\u5B58\u5931\u8D25: " + message);
+          this.syncUnsavedState();
           return false;
+        }
+        // 保存活动标签
+        async saveActiveTab() {
+          var tab = getActiveTab(this);
+          if (!tab) return false;
+          return await this.saveTab(tab);
+        }
+        // 另存为活动标签
+        async saveActiveTabAs(filePath) {
+          var tab = getActiveTab(this);
+          if (!tab) return false;
+          return await this.saveTabAs(tab, filePath);
         }
         // 关闭前逐个选择保存——自定义弹窗
         async saveAllTabsAndClose() {
@@ -41715,6 +41719,7 @@ ${content}</tr>
           });
           if (unsaved.length === 0) {
             saveTabConfig(this);
+            this.syncUnsavedState();
             window.electronAPI.allTabsSavedClose();
             return;
           }
@@ -41781,35 +41786,26 @@ ${content}</tr>
           });
           if (!saveList) return;
           if (saveList === "nosave") {
-            saveList = { items: [] };
+            this.syncUnsavedState();
+            window.electronAPI.allTabsSavedClose();
+            return;
           }
+          var failedTabs = [];
           for (var i = 0; i < saveList.items.length; i++) {
             var item = saveList.items[i];
             if (!item.cb.checked) continue;
-            var saved = false;
-            if (item.tab.filePath) {
-              try {
-                var html2 = item.tab.editor.getHTML();
-                var result = await window.electronAPI.saveFile(item.tab.filePath, html2);
-                saved = !!(result && result.success);
-                if (!saved) {
-                  var message = result && result.error ? result.error : "\u672A\u77E5\u9519\u8BEF";
-                  alert("\u4FDD\u5B58\u300C" + item.tab.fileName + "\u300D\u5931\u8D25: " + message);
-                }
-              } catch (e) {
-                console.error("Save failed:", item.tab.fileName, e);
-                alert("\u4FDD\u5B58\u300C" + item.tab.fileName + "\u300D\u5931\u8D25: " + e.message);
-              }
-            } else {
-              await switchTab(this, item.tab.id);
-              saved = await this.saveActiveTabAs(null);
+            var saved = item.tab.filePath ? await this.saveTab(item.tab) : await this.saveTabAs(item.tab, null);
+            if (!saved) {
+              failedTabs.push(item.tab.fileName);
             }
-            if (!saved) return;
-            item.tab.isModified = false;
-            await deleteDraftForTab(this, item.tab);
           }
           updateTabBar(this);
           saveTabConfig(this);
+          this.syncUnsavedState();
+          if (failedTabs.length > 0) {
+            alert("\u4EE5\u4E0B\u6807\u7B7E\u4FDD\u5B58\u5931\u8D25\uFF0C\u7A97\u53E3\u672A\u5173\u95ED\uFF1A\n" + failedTabs.join("\n"));
+            return;
+          }
           window.electronAPI.allTabsSavedClose();
         }
       };
