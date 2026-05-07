@@ -71,6 +71,47 @@ class MDownerApp {
     var seenPaths = new Set();
     var seenDrafts = new Set();
 
+    async function readOptionalFile(filePath) {
+      if (!filePath || !window.electronAPI) return null;
+      try {
+        return window.electronAPI.readFileIfExists
+          ? await window.electronAPI.readFileIfExists(filePath)
+          : await window.electronAPI.readFile(filePath);
+      } catch (_) {
+        return null;
+      }
+    }
+
+    async function loadDraftState(draftId) {
+      if (!draftId || !window.electronAPI) return null;
+      var candidates = null;
+      try {
+        candidates = window.electronAPI.getDraftCandidates
+          ? await window.electronAPI.getDraftCandidates(draftId)
+          : { jsonPath: await window.electronAPI.getDraftPath(draftId), htmlPath: null, legacyPath: null };
+      } catch (_) {
+        return null;
+      }
+      if (!candidates) return null;
+
+      var jsonContent = await readOptionalFile(candidates.jsonPath);
+      if (jsonContent) {
+        return { content: jsonContent, needsMigration: false };
+      }
+
+      var htmlContent = await readOptionalFile(candidates.htmlPath);
+      if (htmlContent) {
+        return { content: htmlContent, needsMigration: true };
+      }
+
+      var legacyContent = await readOptionalFile(candidates.legacyPath);
+      if (legacyContent) {
+        return { content: legacyContent, needsMigration: true };
+      }
+
+      return null;
+    }
+
     for (var i = 0; i < openTabs.length; i++) {
       var tabInfo = openTabs[i] || {};
       var draftId = tabInfo.draftId || null;
@@ -88,23 +129,15 @@ class MDownerApp {
         seenPaths.add(normalized);
       }
 
-      var draftContent = null;
-      if (draftId && window.electronAPI) {
-        try {
-          var draftPath = await window.electronAPI.getDraftPath(draftId);
-          draftContent = window.electronAPI.readFileIfExists
-            ? await window.electronAPI.readFileIfExists(draftPath)
-            : await window.electronAPI.readFile(draftPath);
-        } catch (_) {}
-      }
-
-      if (draftContent) {
+      var draftState = await loadDraftState(draftId);
+      if (draftState && draftState.content) {
         restoredTabs.push({
           filePath: filePath,
           fileName: fileName,
           draftId: draftId,
-          content: draftContent,
-          isModified: true
+          content: draftState.content,
+          isModified: true,
+          migrateDraft: draftState.needsMigration
         });
         continue;
       }
@@ -117,7 +150,8 @@ class MDownerApp {
             fileName: fileName,
             draftId: draftId,
             content: content,
-            isModified: false
+            isModified: false,
+            migrateDraft: false
           });
         } catch (_) {
           console.log('Tab restore skipped (file missing):', filePath);
@@ -128,7 +162,8 @@ class MDownerApp {
           fileName: fileName,
           draftId: draftId,
           content: '',
-          isModified: false
+          isModified: false,
+          migrateDraft: false
         });
       }
     }
@@ -140,17 +175,16 @@ class MDownerApp {
           var legacy = legacyDrafts[k] || {};
           if (!legacy.draftId || seenDrafts.has(legacy.draftId)) continue;
           seenDrafts.add(legacy.draftId);
-          try {
-            var legacyPath = await window.electronAPI.getDraftPath(legacy.draftId);
-            var legacyContent = await window.electronAPI.readFile(legacyPath);
-            restoredTabs.push({
-              filePath: null,
-              fileName: legacy.fileName || '恢复的草稿',
-              draftId: legacy.draftId,
-              content: legacyContent,
-              isModified: true
-            });
-          } catch (_) {}
+          var legacyState = await loadDraftState(legacy.draftId);
+          if (!legacyState || !legacyState.content) continue;
+          restoredTabs.push({
+            filePath: null,
+            fileName: legacy.fileName || '恢复的草稿',
+            draftId: legacy.draftId,
+            content: legacyState.content,
+            isModified: true,
+            migrateDraft: legacyState.needsMigration
+          });
         }
       } catch (_) {}
     }
@@ -170,6 +204,11 @@ class MDownerApp {
         await switchTab(this, this.tabs[idx].id);
       }
       saveTabConfig(this);
+
+      for (var m = 0; m < restoredTabs.length; m++) {
+        if (!restoredTabs[m].migrateDraft || !this.tabs[m] || !this.tabs[m].isModified) continue;
+        await saveDraftForTab(this, this.tabs[m]);
+      }
     }
 
     if (this.tabs.length === 0) {

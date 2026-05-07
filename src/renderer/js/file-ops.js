@@ -6,11 +6,15 @@ function getDraftKey(tab) {
   return tab && (tab.draftId || tab.id);
 }
 
-async function getDraftPath(tab) {
+async function getDraftCandidates(tab) {
   if (!window.electronAPI || !tab) return null;
   var draftKey = getDraftKey(tab);
   if (!draftKey) return null;
-  return await window.electronAPI.getDraftPath(draftKey);
+  if (window.electronAPI.getDraftCandidates) {
+    return await window.electronAPI.getDraftCandidates(draftKey);
+  }
+  var draftPath = await window.electronAPI.getDraftPath(draftKey);
+  return { jsonPath: draftPath, htmlPath: null, legacyPath: null };
 }
 
 export function newFile(app) {
@@ -53,10 +57,17 @@ export async function saveDraftForTab(app, tab) {
   if (!tab || !tab.editor || !app.isEditorReady) return false;
   if (!window.electronAPI) return false;
   try {
-    var html = tab.editor.getHTML();
-    var draftPath = await getDraftPath(tab);
+    var draftJson = JSON.stringify(tab.editor.getJSON());
+    var candidates = await getDraftCandidates(tab);
+    var draftPath = candidates && candidates.jsonPath;
     if (!draftPath) return false;
-    await window.electronAPI.writeFile(draftPath, html);
+    await window.electronAPI.writeFile(draftPath, draftJson);
+    if (candidates.htmlPath) {
+      await window.electronAPI.deleteDraft(candidates.htmlPath);
+    }
+    if (candidates.legacyPath) {
+      await window.electronAPI.deleteDraft(candidates.legacyPath);
+    }
     return true;
   } catch (error) {
     console.error('Failed to save draft:', error);
@@ -67,9 +78,17 @@ export async function saveDraftForTab(app, tab) {
 export async function deleteDraftForTab(app, tab) {
   if (!tab || !window.electronAPI) return false;
   try {
-    var draftPath = await getDraftPath(tab);
-    if (!draftPath) return false;
-    await window.electronAPI.deleteDraft(draftPath);
+    var candidates = await getDraftCandidates(tab);
+    if (!candidates) return false;
+    if (candidates.jsonPath) {
+      await window.electronAPI.deleteDraft(candidates.jsonPath);
+    }
+    if (candidates.htmlPath) {
+      await window.electronAPI.deleteDraft(candidates.htmlPath);
+    }
+    if (candidates.legacyPath) {
+      await window.electronAPI.deleteDraft(candidates.legacyPath);
+    }
     return true;
   } catch (_) {
     return false;

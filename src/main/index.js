@@ -77,20 +77,24 @@ function extractFilesFromArgv(argv) {
   return files;
 }
 
-function getDraftPathByKey(draftKey) {
+function getDraftBaseName(draftKey) {
   const raw = String(draftKey || '').trim();
-  if (!raw) {
-    return path.join(app.getPath('userData'), 'draft.html');
-  }
+  if (!raw) return 'draft';
   const safeKey = raw.replace(/[^a-zA-Z0-9._-]/g, '_');
-  if (safeKey.startsWith('tab_')) {
-    return path.join(app.getPath('userData'), 'draft_' + safeKey + '.md');
-  }
-  if (safeKey.startsWith('draft_tab_')) {
-    return path.join(app.getPath('userData'), safeKey + '.md');
-  }
-  const baseName = safeKey.startsWith('draft_') ? safeKey : 'draft_' + safeKey;
-  return path.join(app.getPath('userData'), baseName + '.html');
+  return safeKey.startsWith('draft_') ? safeKey : 'draft_' + safeKey;
+}
+
+function getDraftCandidatesByKey(draftKey) {
+  const baseName = getDraftBaseName(draftKey);
+  const dir = app.getPath('userData');
+  const jsonPath = path.join(dir, baseName + '.json');
+  const htmlPath = path.join(dir, baseName + '.html');
+  const legacyPath = /^draft_tab_/i.test(baseName) ? path.join(dir, baseName + '.md') : null;
+  return { jsonPath, htmlPath, legacyPath };
+}
+
+function getDraftPathByKey(draftKey) {
+  return getDraftCandidatesByKey(draftKey).jsonPath;
 }
 
 async function listLegacyDrafts() {
@@ -170,14 +174,18 @@ async function cleanOrphanDrafts() {
     for (var j = 0; j < openTabs.length; j++) {
       var draftId = openTabs[j] && openTabs[j].draftId;
       if (!draftId) continue;
-      activeDraftFiles.add(path.basename(getDraftPathByKey(draftId)));
+      var candidates = getDraftCandidatesByKey(draftId);
+      if (candidates.jsonPath) activeDraftFiles.add(path.basename(candidates.jsonPath));
+      if (candidates.htmlPath) activeDraftFiles.add(path.basename(candidates.htmlPath));
+      if (candidates.legacyPath) activeDraftFiles.add(path.basename(candidates.legacyPath));
     }
 
     for (var i = 0; i < files.length; i++) {
       var f = files[i];
       var isLegacyDraft = /^draft_tab_.+\.md$/i.test(f);
       var isHtmlDraft = /^draft_.+\.html$/i.test(f);
-      if (!isLegacyDraft && !isHtmlDraft) continue;
+      var isJsonDraft = /^draft_.+\.json$/i.test(f);
+      if (!isLegacyDraft && !isHtmlDraft && !isJsonDraft) continue;
       if (activeDraftFiles.has(f)) continue;
       var filePath = path.join(dir, f);
       try {
@@ -616,6 +624,10 @@ function registerIPCHandlers() {
 
   ipcMain.handle('get-draft-path', (_, draftKey) => {
     return getDraftPathByKey(draftKey);
+  });
+
+  ipcMain.handle('get-draft-candidates', (_, draftKey) => {
+    return getDraftCandidatesByKey(draftKey);
   });
 
   ipcMain.handle('list-legacy-drafts', async () => {

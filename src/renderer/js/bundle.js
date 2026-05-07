@@ -40907,11 +40907,15 @@ ${content}</tr>
   function getDraftKey(tab) {
     return tab && (tab.draftId || tab.id);
   }
-  async function getDraftPath(tab) {
+  async function getDraftCandidates(tab) {
     if (!window.electronAPI || !tab) return null;
     var draftKey = getDraftKey(tab);
     if (!draftKey) return null;
-    return await window.electronAPI.getDraftPath(draftKey);
+    if (window.electronAPI.getDraftCandidates) {
+      return await window.electronAPI.getDraftCandidates(draftKey);
+    }
+    var draftPath = await window.electronAPI.getDraftPath(draftKey);
+    return { jsonPath: draftPath, htmlPath: null, legacyPath: null };
   }
   function setFileContent(app, tab, content) {
     try {
@@ -40942,10 +40946,17 @@ ${content}</tr>
     if (!tab || !tab.editor || !app.isEditorReady) return false;
     if (!window.electronAPI) return false;
     try {
-      var html2 = tab.editor.getHTML();
-      var draftPath = await getDraftPath(tab);
+      var draftJson = JSON.stringify(tab.editor.getJSON());
+      var candidates = await getDraftCandidates(tab);
+      var draftPath = candidates && candidates.jsonPath;
       if (!draftPath) return false;
-      await window.electronAPI.writeFile(draftPath, html2);
+      await window.electronAPI.writeFile(draftPath, draftJson);
+      if (candidates.htmlPath) {
+        await window.electronAPI.deleteDraft(candidates.htmlPath);
+      }
+      if (candidates.legacyPath) {
+        await window.electronAPI.deleteDraft(candidates.legacyPath);
+      }
       return true;
     } catch (error) {
       console.error("Failed to save draft:", error);
@@ -40955,9 +40966,17 @@ ${content}</tr>
   async function deleteDraftForTab(app, tab) {
     if (!tab || !window.electronAPI) return false;
     try {
-      var draftPath = await getDraftPath(tab);
-      if (!draftPath) return false;
-      await window.electronAPI.deleteDraft(draftPath);
+      var candidates = await getDraftCandidates(tab);
+      if (!candidates) return false;
+      if (candidates.jsonPath) {
+        await window.electronAPI.deleteDraft(candidates.jsonPath);
+      }
+      if (candidates.htmlPath) {
+        await window.electronAPI.deleteDraft(candidates.htmlPath);
+      }
+      if (candidates.legacyPath) {
+        await window.electronAPI.deleteDraft(candidates.legacyPath);
+      }
       return true;
     } catch (_) {
       return false;
@@ -41256,6 +41275,37 @@ ${content}</tr>
           var restoredTabs = [];
           var seenPaths = /* @__PURE__ */ new Set();
           var seenDrafts = /* @__PURE__ */ new Set();
+          async function readOptionalFile(filePath2) {
+            if (!filePath2 || !window.electronAPI) return null;
+            try {
+              return window.electronAPI.readFileIfExists ? await window.electronAPI.readFileIfExists(filePath2) : await window.electronAPI.readFile(filePath2);
+            } catch (_) {
+              return null;
+            }
+          }
+          async function loadDraftState(draftId2) {
+            if (!draftId2 || !window.electronAPI) return null;
+            var candidates = null;
+            try {
+              candidates = window.electronAPI.getDraftCandidates ? await window.electronAPI.getDraftCandidates(draftId2) : { jsonPath: await window.electronAPI.getDraftPath(draftId2), htmlPath: null, legacyPath: null };
+            } catch (_) {
+              return null;
+            }
+            if (!candidates) return null;
+            var jsonContent = await readOptionalFile(candidates.jsonPath);
+            if (jsonContent) {
+              return { content: jsonContent, needsMigration: false };
+            }
+            var htmlContent = await readOptionalFile(candidates.htmlPath);
+            if (htmlContent) {
+              return { content: htmlContent, needsMigration: true };
+            }
+            var legacyContent = await readOptionalFile(candidates.legacyPath);
+            if (legacyContent) {
+              return { content: legacyContent, needsMigration: true };
+            }
+            return null;
+          }
           for (var i = 0; i < openTabs.length; i++) {
             var tabInfo = openTabs[i] || {};
             var draftId = tabInfo.draftId || null;
@@ -41270,21 +41320,15 @@ ${content}</tr>
               if (seenPaths.has(normalized)) continue;
               seenPaths.add(normalized);
             }
-            var draftContent = null;
-            if (draftId && window.electronAPI) {
-              try {
-                var draftPath = await window.electronAPI.getDraftPath(draftId);
-                draftContent = window.electronAPI.readFileIfExists ? await window.electronAPI.readFileIfExists(draftPath) : await window.electronAPI.readFile(draftPath);
-              } catch (_) {
-              }
-            }
-            if (draftContent) {
+            var draftState = await loadDraftState(draftId);
+            if (draftState && draftState.content) {
               restoredTabs.push({
                 filePath,
                 fileName,
                 draftId,
-                content: draftContent,
-                isModified: true
+                content: draftState.content,
+                isModified: true,
+                migrateDraft: draftState.needsMigration
               });
               continue;
             }
@@ -41296,7 +41340,8 @@ ${content}</tr>
                   fileName,
                   draftId,
                   content,
-                  isModified: false
+                  isModified: false,
+                  migrateDraft: false
                 });
               } catch (_) {
                 console.log("Tab restore skipped (file missing):", filePath);
@@ -41307,7 +41352,8 @@ ${content}</tr>
                 fileName,
                 draftId,
                 content: "",
-                isModified: false
+                isModified: false,
+                migrateDraft: false
               });
             }
           }
@@ -41318,18 +41364,16 @@ ${content}</tr>
                 var legacy = legacyDrafts[k] || {};
                 if (!legacy.draftId || seenDrafts.has(legacy.draftId)) continue;
                 seenDrafts.add(legacy.draftId);
-                try {
-                  var legacyPath = await window.electronAPI.getDraftPath(legacy.draftId);
-                  var legacyContent = await window.electronAPI.readFile(legacyPath);
-                  restoredTabs.push({
-                    filePath: null,
-                    fileName: legacy.fileName || "\u6062\u590D\u7684\u8349\u7A3F",
-                    draftId: legacy.draftId,
-                    content: legacyContent,
-                    isModified: true
-                  });
-                } catch (_) {
-                }
+                var legacyState = await loadDraftState(legacy.draftId);
+                if (!legacyState || !legacyState.content) continue;
+                restoredTabs.push({
+                  filePath: null,
+                  fileName: legacy.fileName || "\u6062\u590D\u7684\u8349\u7A3F",
+                  draftId: legacy.draftId,
+                  content: legacyState.content,
+                  isModified: true,
+                  migrateDraft: legacyState.needsMigration
+                });
               }
             } catch (_) {
             }
@@ -41348,6 +41392,10 @@ ${content}</tr>
               await switchTab(this, this.tabs[idx].id);
             }
             saveTabConfig(this);
+            for (var m = 0; m < restoredTabs.length; m++) {
+              if (!restoredTabs[m].migrateDraft || !this.tabs[m] || !this.tabs[m].isModified) continue;
+              await saveDraftForTab(this, this.tabs[m]);
+            }
           }
           if (this.tabs.length === 0) {
             createTab(this);

@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 内容
   getContent: () => ipcRenderer.invoke('get-content'),
   getDraftPath: (tabId) => ipcRenderer.invoke('get-draft-path', tabId),
+  getDraftCandidates: (tabId) => ipcRenderer.invoke('get-draft-candidates', tabId),
   listLegacyDrafts: () => ipcRenderer.invoke('list-legacy-drafts'),
   deleteDraft: (draftPath) => ipcRenderer.invoke('delete-draft', draftPath),
   saveFile: (filePath, htmlContent) => ipcRenderer.invoke('save-file', filePath, htmlContent),
