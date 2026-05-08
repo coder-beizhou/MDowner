@@ -2,6 +2,36 @@
 import { marked } from '../../../node_modules/marked/lib/marked.esm.js';
 import { getActiveTab } from './tabs.js';
 
+function escapeHTML(str) {
+  return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function extractFrontmatterBlock(raw) {
+  if (!raw || (!raw.startsWith('---\n') && !raw.startsWith('---\r\n'))) {
+    return null;
+  }
+  var match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---(?=\r?\n|$)/);
+  if (!match) {
+    return null;
+  }
+  return {
+    body: String(match[1] || '').replace(/\r\n?/g, '\n'),
+    rest: raw.slice(match[0].length)
+  };
+}
+
+function renderMarkdownContent(raw) {
+  var frontmatter = extractFrontmatterBlock(raw);
+  if (!frontmatter) {
+    return marked.parse(raw);
+  }
+  var html = '<pre data-frontmatter="true" data-language="yaml"><code class="language-yaml">' + escapeHTML(frontmatter.body) + '</code></pre>';
+  if (frontmatter.rest) {
+    html += marked.parse(frontmatter.rest);
+  }
+  return html;
+}
+
 function getDraftKey(tab) {
   return tab && (tab.draftId || tab.id);
 }
@@ -36,7 +66,7 @@ export function setFileContent(app, tab, content) {
     } else if (trimmed && trimmed.startsWith('<') && /<(p|h[1-6]|ul|ol|li|pre|blockquote|table|img|hr|div|code)\b/i.test(trimmed)) {
       tab.editor.commands.setContent(trimmed);
     } else {
-      tab.editor.commands.setContent(marked.parse(raw));
+      tab.editor.commands.setContent(renderMarkdownContent(raw));
     }
     clearTimeout(app._autoDetectTimer);
     if (tab.editor && tab.editor._autoDetect) tab.editor._autoDetect();

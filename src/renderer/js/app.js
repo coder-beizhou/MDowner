@@ -8,7 +8,7 @@ import { insertLink, insertImage, initImagePaste } from './dialogs.js';
 import { newFile, openFile, setFileContent, getContent, saveDraft, saveDraftForTab, deleteDraftForTab, exportPDF, exportDOCX } from './file-ops.js';
 import { applyTheme, toggleTheme, initSidebar, toggleSidebar, scheduleOutlineUpdate, updateOutline, initStatusBar, updateStatusBar, applyConfig } from './ui.js';
 import { loadConfig, saveConfig } from './config.js';
-import { initTabBar, createTab, switchTab, closeTab, getActiveTab, nextTab, prevTab, updateTabBar, notifyModified, saveTabConfig, findTabByFilePath } from './tabs.js';
+import { initTabBar, createTab, switchTab, closeTab, discardTab, getActiveTab, nextTab, prevTab, updateTabBar, notifyModified, saveTabConfig, findTabByFilePath } from './tabs.js';
 
 class MDownerApp {
   constructor() {
@@ -28,6 +28,7 @@ class MDownerApp {
       sidebarVisible: true,
       sidebarWidth: 250
     };
+    this.lastExitWasGraceful = false;
     this.init();
   }
 
@@ -63,7 +64,7 @@ class MDownerApp {
 
   async restoreTabs() {
     var openTabs = this.config.openTabs || [];
-    if (openTabs.length === 0 && this.config.lastOpenedFile) {
+    if (!this.lastExitWasGraceful && openTabs.length === 0 && this.config.lastOpenedFile) {
       openTabs = [{ filePath: this.config.lastOpenedFile }];
     }
 
@@ -159,7 +160,7 @@ class MDownerApp {
       }
     }
 
-    if (window.electronAPI && window.electronAPI.listLegacyDrafts) {
+    if (!this.lastExitWasGraceful && window.electronAPI && window.electronAPI.listLegacyDrafts) {
       try {
         var legacyDrafts = await window.electronAPI.listLegacyDrafts();
         for (var k = 0; k < legacyDrafts.length; k++) {
@@ -201,7 +202,7 @@ class MDownerApp {
       if (idx >= 0 && this.tabs[idx]) {
         await switchTab(this, this.tabs[idx].id);
       }
-      saveTabConfig(this);
+      await saveTabConfig(this);
 
       for (var m = 0; m < migratedTabs.length; m++) {
         await saveDraftForTab(this, migratedTabs[m]);
@@ -229,6 +230,24 @@ class MDownerApp {
         setFileContent(this, existing, content);
       }
       return existing;
+    }
+
+    var reusableTab = this.tabs.find(function(tab) {
+      if (!tab || tab.filePath || tab.isModified || !tab.editor) return false;
+      var text = typeof tab.editor.getText === 'function' ? tab.editor.getText() : '';
+      return !String(text || '').trim();
+    }) || null;
+
+    if (reusableTab) {
+      reusableTab.filePath = path || null;
+      reusableTab.fileName = path ? path.split(/[/\\]/).pop() : '未命名';
+      if (typeof content === 'string' && content !== '') {
+        setFileContent(this, reusableTab, content);
+      }
+      await switchTab(this, reusableTab.id);
+      updateTabBar(this);
+      await saveTabConfig(this);
+      return reusableTab;
     }
 
     var tabId = createTab(this, path, content, false, {
@@ -327,7 +346,17 @@ class MDownerApp {
       updateTabBar(self);
     });
     window.electronAPI.onConfigLoaded(function(config) {
-      self.config = { ...self.config, ...config };
+      if (self.tabs && self.tabs.length > 0) {
+        self.config = {
+          ...self.config,
+          ...config,
+          openTabs: self.config.openTabs,
+          activeTabIndex: self.config.activeTabIndex
+        };
+      } else {
+        self.config = { ...self.config, ...config };
+      }
+      self.lastExitWasGraceful = !!config.lastExitWasGraceful;
       self.applyConfig();
     });
     window.electronAPI.onToggleSidebar(function() { self.toggleSidebar(); });
@@ -346,8 +375,8 @@ class MDownerApp {
     window.electronAPI.onNextTab(function() { self.nextTab(); });
     window.electronAPI.onPrevTab(function() { self.prevTab(); });
     window.electronAPI.onCloseActiveTab(function() { self.closeActiveTab(); });
-    // 关闭前保存全部
     window.electronAPI.onSaveAllTabsClose(function() { self.saveAllTabsAndClose(); });
+    window.electronAPI.onDiscardAllTabsClose(function() { self.discardAllTabsAndClose(); });
     // 保存活动标签
     window.electronAPI.onFileSave(function() { self.saveActiveTab(); });
     window.electronAPI.onFileSaveAs(function(filePath) { self.saveActiveTabAs(filePath); });
@@ -379,7 +408,7 @@ class MDownerApp {
       this.updateStatusBar();
       updateTabBar(this);
       await deleteDraftForTab(this, tab);
-      saveTabConfig(this);
+      await saveTabConfig(this);
       this.syncUnsavedState();
       return true;
     }
@@ -412,7 +441,7 @@ class MDownerApp {
       this.updateStatusBar();
       updateTabBar(this);
       await deleteDraftForTab(this, tab);
-      saveTabConfig(this);
+      await saveTabConfig(this);
       this.syncUnsavedState();
       return true;
     }
@@ -438,12 +467,31 @@ class MDownerApp {
     return await this.saveTabAs(tab, filePath);
   }
 
+  async discardTabs(tabs) {
+    var targets = (tabs || []).slice();
+    for (var i = 0; i < targets.length; i++) {
+      await discardTab(this, targets[i].id, { createReplacement: false });
+    }
+    if (this.tabs.length === 0) {
+      this.activeTabId = null;
+      updateTabBar(this);
+    }
+    await saveTabConfig(this);
+    this.syncUnsavedState();
+  }
+
+  async discardAllTabsAndClose() {
+    var unsaved = this.tabs.filter(function(t) { return t.isModified; });
+    await this.discardTabs(unsaved);
+    window.electronAPI.allTabsDiscardedClose();
+  }
+
   // 关闭前逐个选择保存——自定义弹窗
   async saveAllTabsAndClose() {
     var self = this;
     var unsaved = this.tabs.filter(function(t) { return t.isModified; });
     if (unsaved.length === 0) {
-      saveTabConfig(this);
+      await saveTabConfig(this);
       this.syncUnsavedState();
       window.electronAPI.allTabsSavedClose();
       return;
@@ -512,18 +560,21 @@ class MDownerApp {
       document.addEventListener('keydown', onKey, { once: true });
     });
 
-    if (!saveList) return; // 取消
+    if (!saveList) return;
     if (saveList === 'nosave') {
-      this.syncUnsavedState();
-      window.electronAPI.allTabsSavedClose();
+      await this.discardAllTabsAndClose();
       return;
     }
 
     var failedTabs = [];
+    var discardTargets = [];
 
     for (var i = 0; i < saveList.items.length; i++) {
       var item = saveList.items[i];
-      if (!item.cb.checked) continue;
+      if (!item.cb.checked) {
+        discardTargets.push(item.tab);
+        continue;
+      }
       var saved = item.tab.filePath
         ? await this.saveTab(item.tab)
         : await this.saveTabAs(item.tab, null);
@@ -532,13 +583,17 @@ class MDownerApp {
       }
     }
 
-    updateTabBar(this);
-    saveTabConfig(this);
-    this.syncUnsavedState();
-
     if (failedTabs.length > 0) {
       alert('以下标签保存失败，窗口未关闭：\n' + failedTabs.join('\n'));
       return;
+    }
+
+    if (discardTargets.length > 0) {
+      await this.discardTabs(discardTargets);
+    } else {
+      updateTabBar(this);
+      await saveTabConfig(this);
+      this.syncUnsavedState();
     }
 
     window.electronAPI.allTabsSavedClose();

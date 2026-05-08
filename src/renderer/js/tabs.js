@@ -2,6 +2,44 @@
 import { initEditor } from './editor-core.js';
 import { setFileContent, deleteDraftForTab, saveDraftForTab } from './file-ops.js';
 
+async function removeTab(app, tab, options) {
+  options = options || {};
+  if (!tab) return;
+
+  if (options.deleteDraft !== false) {
+    await deleteDraftForTab(app, tab);
+  }
+
+  if (tab.editor) {
+    tab.editor.destroy();
+  }
+
+  if (tab.wrapperEl && tab.wrapperEl.parentNode) {
+    tab.wrapperEl.parentNode.removeChild(tab.wrapperEl);
+  }
+
+  var idx = app.tabs.indexOf(tab);
+  if (idx !== -1) app.tabs.splice(idx, 1);
+
+  if (app.tabs.length === 0) {
+    if (options.createReplacement === false) {
+      app.activeTabId = null;
+      updateTabBar(app);
+      return;
+    }
+    createTab(app);
+    return;
+  }
+
+  if (app.activeTabId === tab.id) {
+    var newIdx = Math.min(idx, app.tabs.length - 1);
+    await switchTab(app, app.tabs[newIdx].id);
+  } else {
+    updateTabBar(app);
+    await saveTabConfig(app);
+  }
+}
+
 // 生成唯一标签ID
 function genTabId() {
   return 'tab_' + Math.random().toString(36).slice(2, 10);
@@ -35,6 +73,17 @@ export function initTabBar(app) {
       app._contextTabId = null;
       handleTabMenu(app);
     });
+  }
+
+  var tabList = document.getElementById('tab-list');
+  if (tabList && !tabList._mdownerWheelBound) {
+    tabList._mdownerWheelBound = true;
+    tabList.addEventListener('wheel', function(e) {
+      if (tabList.scrollWidth <= tabList.clientWidth) return;
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      tabList.scrollLeft += e.deltaY;
+      e.preventDefault();
+    }, { passive: false });
   }
 }
 
@@ -89,7 +138,9 @@ export function createTab(app, filePath, content, noSwitch, options) {
   }
 
   updateTabBar(app);
-  if (!noSwitch) saveTabConfig(app);
+  if (!noSwitch) {
+    saveTabConfig(app);
+  }
   return tabId;
 }
 
@@ -112,7 +163,7 @@ export async function switchTab(app, tabId) {
   }
 
   updateTabBar(app);
-  saveTabConfig(app);
+  await saveTabConfig(app);
   app.updateToolbarState();
   app.updateStatusBar();
   app.updateOutline();
@@ -125,46 +176,23 @@ export async function closeTab(app, tabId) {
   var tab = app.tabs.find(function(t) { return t.id === tabId; });
   if (!tab) return;
 
-  // 弹窗确认保存
   if (tab.isModified && window.electronAPI) {
     var response = await window.electronAPI.showSaveDialog(tab.fileName);
     if (response === 0) {
       var saved = await app.saveTab(tab);
       if (!saved) return;
     } else if (response === 2) {
-      return; // 取消
+      return;
     }
-    // response === 1: 不保存，继续关闭
   }
 
-  // 清理草稿文件
-  await deleteDraftForTab(app, tab);
+  await removeTab(app, tab);
+}
 
-  // 销毁编辑器
-  if (tab.editor) {
-    tab.editor.destroy();
-  }
-
-  // 移除 DOM
-  if (tab.wrapperEl && tab.wrapperEl.parentNode) {
-    tab.wrapperEl.parentNode.removeChild(tab.wrapperEl);
-  }
-
-  // 从数组中移除
-  var idx = app.tabs.indexOf(tab);
-  if (idx !== -1) app.tabs.splice(idx, 1);
-
-  // 切换到邻近标签
-  if (app.tabs.length === 0) {
-    // 最后一个标签关闭后自动新建空标签
-    createTab(app);
-  } else if (app.activeTabId === tabId) {
-    var newIdx = Math.min(idx, app.tabs.length - 1);
-    await switchTab(app, app.tabs[newIdx].id);
-  } else {
-    updateTabBar(app);
-    saveTabConfig(app);
-  }
+export async function discardTab(app, tabId, options) {
+  var tab = app.tabs.find(function(t) { return t.id === tabId; });
+  if (!tab) return;
+  await removeTab(app, tab, options);
 }
 
 // 下一个标签
@@ -309,21 +337,8 @@ async function closeAllTabs(app) {
 async function closeTabSilent(app, tabId) {
   var tab = app.tabs.find(function(t) { return t.id === tabId; });
   if (!tab) return;
-  if (tab.isModified) return; // 防御：已修改标签必须走 closeTab 弹窗确认
-  await deleteDraftForTab(app, tab);
-  if (tab.editor) tab.editor.destroy();
-  if (tab.wrapperEl && tab.wrapperEl.parentNode) tab.wrapperEl.parentNode.removeChild(tab.wrapperEl);
-  var idx = app.tabs.indexOf(tab);
-  if (idx !== -1) app.tabs.splice(idx, 1);
-  if (app.tabs.length === 0) {
-    createTab(app);
-  } else if (app.activeTabId === tabId) {
-    var newIdx = Math.min(idx, app.tabs.length - 1);
-    if (app.tabs[newIdx]) await switchTab(app, app.tabs[newIdx].id);
-  } else {
-    updateTabBar(app);
-    saveTabConfig(app);
-  }
+  if (tab.isModified) return;
+  await removeTab(app, tab);
 }
 
 // 通知主进程活动标签信息
@@ -349,7 +364,7 @@ export function notifyModified(app) {
 
 // 保存标签配置
 export function saveTabConfig(app) {
-  if (!app.config) return;
+  if (!app.config) return Promise.resolve();
   app.config.openTabs = app.tabs.map(function(t) {
     return {
       filePath: t.filePath || null,
@@ -358,5 +373,5 @@ export function saveTabConfig(app) {
     };
   });
   app.config.activeTabIndex = app.tabs.indexOf(getActiveTab(app));
-  app.saveConfig();
+  return app.saveConfig();
 }

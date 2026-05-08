@@ -1,6 +1,6 @@
 {
   "name": "mdowner",
-  "version": "2.5.2",
+  "version": "2.5.4",
   "description": "A Typora-like Markdown editor",
   "main": "src/main/index.js",
   "type": "commonjs",
@@ -17,6 +17,7 @@
   "build": {
     "appId": "com.mdowner.app",
     "productName": "MDowner",
+    "afterPack": "scripts/after-pack.js",
     "directories": {
       "output": "dist"
     },
@@ -44,17 +45,20 @@
       "fileAssociations": [
         {
           "ext": "md",
-          "name": "Markdown 文档",
+          "name": "MDowner.Markdown",
+          "description": "Markdown 文档",
           "role": "Editor"
         },
         {
           "ext": "markdown",
-          "name": "Markdown 文档",
+          "name": "MDowner.Markdown",
+          "description": "Markdown 文档",
           "role": "Editor"
         },
         {
           "ext": "txt",
-          "name": "文本文件",
+          "name": "MDowner.Text",
+          "description": "文本文件",
           "role": "Editor"
         }
       ],
@@ -98,7 +102,8 @@
       "allowToChangeInstallationDirectory": true,
       "deleteAppDataOnUninstall": false,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "include": "scripts/installer.nsh"
     },
     "asar": true,
     "asarUnpack": [

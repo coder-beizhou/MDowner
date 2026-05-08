@@ -5,10 +5,43 @@ export function initContextMenu(app) {
   const editorEl = document.getElementById('editor-container');
   if (!editorEl || !window.electronAPI) return;
 
+  const slugifyHeading = (text) => {
+    return String(text || '')
+      .trim()
+      .toLowerCase()
+      .replace(/["'`]/g, '')
+      .replace(/[^\w一-龥\s-]/g, '')
+      .replace(/\s+/g, '-');
+  };
+
+  const focusHeadingByHash = (hash) => {
+    if (!app.editor || !hash || !hash.startsWith('#')) return false;
+    const target = decodeURIComponent(hash.slice(1)).trim().toLowerCase();
+    if (!target) return false;
+    let targetPos = null;
+    app.editor.state.doc.descendants((node, pos) => {
+      if (targetPos !== null || node.type.name !== 'heading') return;
+      if (target === 'heading-' + pos || slugifyHeading(node.textContent) === target) {
+        targetPos = pos;
+      }
+    });
+    if (targetPos === null) return false;
+    app.editor.commands.focus(targetPos);
+    const node = app.editor.view.nodeDOM(targetPos);
+    if (node) node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    app.editor.commands.setTextSelection(targetPos);
+    return true;
+  };
+
   const findLink = (target) => {
     const link = target.closest('a');
-    if (link && link.href && /^https?:\/\//i.test(link.href)) {
-      return link.href;
+    if (!link) return null;
+    const rawHref = link.getAttribute('href') || '';
+    if (/^https?:\/\//i.test(rawHref)) {
+      return { type: 'external', value: rawHref };
+    }
+    if (rawHref.startsWith('#')) {
+      return { type: 'hash', value: rawHref };
     }
     return null;
   };
@@ -26,12 +59,16 @@ export function initContextMenu(app) {
 
   editorEl.addEventListener('click', (e) => {
     if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
-      const url = findLink(e.target);
-      if (url) {
+      const link = findLink(e.target);
+      if (link) {
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
-        window.electronAPI.openExternal(url);
+        if (link.type === 'external') {
+          window.electronAPI.openExternal(link.value);
+        } else if (link.type === 'hash') {
+          focusHeadingByHash(link.value);
+        }
       }
     }
   }, true);
@@ -66,11 +103,15 @@ export function initContextMenu(app) {
   // 右键菜单
   editorEl.addEventListener('contextmenu', async (e) => {
     if (e.ctrlKey) {
-      const url = findLink(e.target);
-      if (url) {
+      const link = findLink(e.target);
+      if (link) {
         e.preventDefault();
         e.stopPropagation();
-        await window.electronAPI.openExternal(url);
+        if (link.type === 'external') {
+          await window.electronAPI.openExternal(link.value);
+        } else if (link.type === 'hash') {
+          focusHeadingByHash(link.value);
+        }
       }
       return;
     }
@@ -78,13 +119,18 @@ export function initContextMenu(app) {
     e.preventDefault();
     e.stopPropagation();
     const hasSelection = app.editor && !app.editor.state.selection.empty;
-    const linkUrl = findLink(e.target);
+    const linkTarget = findLink(e.target);
+    const linkUrl = linkTarget ? linkTarget.value : null;
     const inTable = isInTable();
     const action = await window.electronAPI.showContextMenu(hasSelection, linkUrl, inTable);
     if (!action || !app.editor) return;
 
     if (action === 'open-link' && linkUrl) {
-      window.electronAPI.openExternal(linkUrl);
+      if (linkTarget && linkTarget.type === 'hash') {
+        focusHeadingByHash(linkUrl);
+      } else {
+        window.electronAPI.openExternal(linkUrl);
+      }
       return;
     }
     if (action === 'copy-link' && linkUrl) {

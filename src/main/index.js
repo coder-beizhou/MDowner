@@ -3,6 +3,15 @@ const fs = require('fs');
 const fsPromises = fs.promises;
 const TurndownService = require('turndown');
 const turndownService = new TurndownService();
+turndownService.addRule('frontmatterBlock', {
+  filter: function(node) {
+    return node.nodeName === 'PRE' && node.getAttribute && node.getAttribute('data-frontmatter') === 'true';
+  },
+  replacement: function(_, node) {
+    var body = String(node.textContent || '').replace(/\r\n?/g, '\n').replace(/\n+$/, '');
+    return '\n\n---\n' + body + '\n---\n\n';
+  }
+});
 
 // 直接获取 Electron API
 const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
@@ -50,6 +59,9 @@ let copyMenuItem = null;
 let rendererReady = false;
 let pendingOpenFiles = [];
 let openingPendingFiles = false;
+let closeFlowInProgress = false;
+let sessionLastExitWasGraceful = false;
+let previousSessionWasGraceful = false;
 
 function normalizePathForCompare(filePath) {
   return String(filePath || '').replace(/\\/g, '/').toLowerCase();
@@ -96,6 +108,68 @@ function getDraftCandidatesByKey(draftKey) {
 
 function getDraftPathByKey(draftKey) {
   return getDraftCandidatesByKey(draftKey).jsonPath;
+}
+
+function getSessionStatePath() {
+  return path.join(app.getPath('userData'), 'session-state.json');
+}
+
+async function loadSessionState() {
+  try {
+    const data = await fsPromises.readFile(getSessionStatePath(), 'utf-8');
+    return JSON.parse(data);
+  } catch (_) {
+    return { lastExitWasGraceful: false };
+  }
+}
+
+async function saveSessionState(state) {
+  try {
+    await fsPromises.writeFile(getSessionStatePath(), JSON.stringify({
+      lastExitWasGraceful: !!(state && state.lastExitWasGraceful),
+      updatedAt: Date.now()
+    }, null, 2));
+  } catch (error) {
+    console.error('Failed to save session state:', error);
+  }
+}
+
+async function markSessionUnclean() {
+  sessionLastExitWasGraceful = false;
+  await saveSessionState({ lastExitWasGraceful: false });
+}
+
+async function markSessionGraceful() {
+  sessionLastExitWasGraceful = true;
+  await saveSessionState({ lastExitWasGraceful: true });
+}
+
+async function deleteAllDraftFiles() {
+  try {
+    const dir = app.getPath('userData');
+    const files = await fsPromises.readdir(dir);
+    for (let i = 0; i < files.length; i++) {
+      const fileName = files[i];
+      if (!/^draft_.+\.(json|html)$/i.test(fileName) && !/^draft_tab_.+\.md$/i.test(fileName)) continue;
+      try {
+        await fsPromises.unlink(path.join(dir, fileName));
+      } catch (_) {}
+    }
+  } catch (_) {}
+}
+
+async function finalizeGracefulClose() {
+  closeFlowInProgress = true;
+  await saveConfig({
+    openTabs: [],
+    activeTabIndex: 0,
+    lastOpenedFile: null
+  });
+  await deleteAllDraftFiles();
+  await markSessionGraceful();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.destroy();
+  }
 }
 
 async function listLegacyDrafts() {
@@ -156,7 +230,16 @@ async function loadConfig() {
 // 保存配置
 async function saveConfig(config) {
   try {
-    await fsPromises.writeFile(path.join(app.getPath('userData'), 'config.json'), JSON.stringify(config, null, 2));
+    const currentConfig = await loadConfig();
+    const nextConfig = {
+      ...currentConfig,
+      ...config,
+      openTabs: Array.isArray(config && config.openTabs) ? config.openTabs : currentConfig.openTabs,
+      activeTabIndex: typeof (config && config.activeTabIndex) === 'number' ? config.activeTabIndex : currentConfig.activeTabIndex,
+      recentFiles: Array.isArray(config && config.recentFiles) ? config.recentFiles : currentConfig.recentFiles,
+      lastOpenedFile: Object.prototype.hasOwnProperty.call(config || {}, 'lastOpenedFile') ? config.lastOpenedFile : currentConfig.lastOpenedFile
+    };
+    await fsPromises.writeFile(path.join(app.getPath('userData'), 'config.json'), JSON.stringify(nextConfig, null, 2));
   } catch (error) {
     console.error('Failed to save config:', error);
   }
@@ -171,6 +254,7 @@ async function cleanOrphanDrafts() {
     var config = await loadConfig();
     var activeDraftFiles = new Set();
     var openTabs = Array.isArray(config && config.openTabs) ? config.openTabs : [];
+    var deleteImmediately = !!previousSessionWasGraceful;
 
     for (var j = 0; j < openTabs.length; j++) {
       var draftId = openTabs[j] && openTabs[j].draftId;
@@ -187,9 +271,14 @@ async function cleanOrphanDrafts() {
       var isHtmlDraft = /^draft_.+\.html$/i.test(f);
       var isJsonDraft = /^draft_.+\.json$/i.test(f);
       if (!isLegacyDraft && !isHtmlDraft && !isJsonDraft) continue;
-      if (activeDraftFiles.has(f)) continue;
+      if (activeDraftFiles.has(f) && !deleteImmediately) continue;
       var filePath = path.join(dir, f);
       try {
+        if (deleteImmediately) {
+          await fsPromises.unlink(filePath);
+          console.log('[CLEAN] Deleted graceful-exit draft:', f);
+          continue;
+        }
         var stat = await fsPromises.stat(filePath);
         if (now - stat.mtimeMs > 7 * 24 * 3600 * 1000) {
           await fsPromises.unlink(filePath);
@@ -222,14 +311,6 @@ async function createWindow() {
 
   rendererReady = false;
 
-  const startupTabs = await getStartupOpenTabs(config);
-  for (let i = 0; i < startupTabs.length; i++) {
-    const tab = startupTabs[i];
-    if (tab.filePath) {
-      enqueuePendingOpenFile(tab.filePath);
-    }
-  }
-
     // 加载HTML文件
   mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
 
@@ -239,6 +320,9 @@ async function createWindow() {
   // 渲染进程崩溃检测
   mainWindow.webContents.on('render-process-gone', function(event, details) {
     rendererReady = false;
+    closeFlowInProgress = false;
+    sessionLastExitWasGraceful = false;
+    previousSessionWasGraceful = false;
     console.error('[FATAL] Renderer crashed! Reason:', details.reason, 'Exit code:', details.exitCode);
   });
 
@@ -247,18 +331,27 @@ async function createWindow() {
     mainWindow.show();
 
     // 发送配置到渲染进程
-    mainWindow.webContents.send('config-loaded', config);
+    mainWindow.webContents.send('config-loaded', {
+      ...config,
+      lastExitWasGraceful: previousSessionWasGraceful
+    });
   });
 
   // 窗口关闭前检查
   mainWindow.on('close', async (e) => {
     console.log('=== close event fired, hasUnsaved =', hasUnsavedTabs);
-    if (!hasUnsavedTabs) return;
-
+    if (closeFlowInProgress) {
+      return;
+    }
     e.preventDefault();
+
+    if (!hasUnsavedTabs) {
+      await finalizeGracefulClose();
+      return;
+    }
+
     var unsaved = null;
     try {
-      // 2 秒超时，防止渲染进程卡死导致窗口永远关不掉
       unsaved = await Promise.race([
         mainWindow.webContents.executeJavaScript(
           '(function(){var app=window.mdownerApp;if(!app||!app.tabs)return[];return app.tabs.filter(function(t){return t.isModified}).map(function(t){return{id:t.id,fileName:t.fileName,filePath:t.filePath}});})()'
@@ -269,7 +362,7 @@ async function createWindow() {
 
     if (!unsaved || unsaved.length === 0) {
       hasUnsavedTabs = false;
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
+      await finalizeGracefulClose();
       return;
     }
 
@@ -281,8 +374,11 @@ async function createWindow() {
         type: 'question', buttons: ['保存全部', '不保存', '取消'],
         defaultId: 0, cancelId: 2, title: '保存更改', message: msg
       });
-      if (result.response === 0) { safeSend('save-all-tabs-close'); }
-      else if (result.response === 1) { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy(); }
+      if (result.response === 0) {
+        safeSend('save-all-tabs-close');
+      } else if (result.response === 1) {
+        safeSend('discard-all-tabs-close');
+      }
     } catch (error) {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
     }
@@ -292,6 +388,7 @@ async function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
     rendererReady = false;
+    closeFlowInProgress = false;
   });
 
   // 设置菜单
@@ -632,6 +729,7 @@ function registerIPCHandlers() {
   });
 
   ipcMain.handle('list-legacy-drafts', async () => {
+    if (previousSessionWasGraceful) return [];
     return await listLegacyDrafts();
   });
 
@@ -938,10 +1036,12 @@ function registerIPCHandlers() {
   });
 
   // 全部保存后关闭
-  ipcMain.on('all-tabs-saved-close', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.destroy();
-    }
+  ipcMain.on('all-tabs-saved-close', async () => {
+    await finalizeGracefulClose();
+  });
+
+  ipcMain.on('all-tabs-discarded-close', async () => {
+    await finalizeGracefulClose();
   });
 
   ipcMain.on('content-modified', () => {
@@ -980,6 +1080,9 @@ function safeSend(channel, ...args) {
 
 // 应用就绪
 app.whenReady().then(async () => {
+  const sessionState = await loadSessionState();
+  previousSessionWasGraceful = !!sessionState.lastExitWasGraceful;
+  await markSessionUnclean();
   registerIPCHandlers();
   const startupFiles = extractFilesFromArgv(process.argv);
   await openFilesInPrimaryWindow(startupFiles);

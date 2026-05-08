@@ -50,6 +50,14 @@ export function scheduleOutlineUpdate(app) {
   });
 }
 
+function focusOutlineHeading(app, pos) {
+  if (!app.editor) return;
+  app.editor.commands.focus(pos);
+  const node = app.editor.view.nodeDOM(pos);
+  if (node) node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  app.editor.commands.setTextSelection(pos);
+}
+
 export function updateOutline(app) {
   if (!app.editor || !app.isEditorReady) return;
   const outline = document.getElementById('outline');
@@ -68,16 +76,18 @@ export function updateOutline(app) {
   }
 
   outline.innerHTML = headings.map(function(h) {
-    return '<div class="outline-item" data-level="' + h.level + '" data-pos="' + h.pos + '">' + escapeHTML(h.text) + '</div>';
+    return '<a class="outline-item" href="#heading-' + h.pos + '" data-level="' + h.level + '" data-pos="' + h.pos + '">' + escapeHTML(h.text) + '</a>';
   }).join('');
 
   outline.querySelectorAll('.outline-item').forEach(item => {
-    item.addEventListener('click', () => {
-      const pos = parseInt(item.dataset.pos);
-      app.editor.commands.focus(pos);
-      const node = app.editor.view.nodeDOM(pos);
-      if (node) node.scrollIntoView({ behavior: "smooth", block: "center" });
-      app.editor.commands.setTextSelection(pos);
+    item.addEventListener('mousedown', function(e) {
+      if (e.button === 0 && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
+        e.preventDefault();
+      }
+    });
+    item.addEventListener('click', function(e) {
+      e.preventDefault();
+      focusOutlineHeading(app, parseInt(item.dataset.pos, 10));
     });
   });
 }

@@ -280,6 +280,13 @@ export function initEditor(app, editorElement, tabId) {
         CodeBlock.extend({
           addAttributes: function() {
             return {
+              frontmatter: {
+                default: false,
+                rendered: false,
+                parseHTML: function(el) {
+                  return el.getAttribute('data-frontmatter') === 'true';
+                }
+              },
               language: {
                 default: null,
                 rendered: false,
@@ -303,6 +310,9 @@ export function initEditor(app, editorElement, tabId) {
             // 语言标签通过 CSS ::after 伪元素渲染，而非 DOM 文本节点——
             // 这样标签文字不可选中、不可复制、不会被搜索匹配
             attrs['data-language'] = node.attrs.language || 'text';
+            if (node.attrs.frontmatter) {
+              attrs['data-frontmatter'] = 'true';
+            }
             return [
               'pre',
               attrs,

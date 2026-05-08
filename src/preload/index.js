@@ -76,6 +76,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('save-all-tabs-close');
     ipcRenderer.on('save-all-tabs-close', callback);
   },
+  onDiscardAllTabsClose: (callback) => {
+    ipcRenderer.removeAllListeners('discard-all-tabs-close');
+    ipcRenderer.on('discard-all-tabs-close', callback);
+  },
   onFileSave: (callback) => {
     ipcRenderer.removeAllListeners('file-save');
     ipcRenderer.on('file-save', callback);
@@ -96,6 +100,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   syncUnsavedState: (hasUnsaved) => ipcRenderer.send('sync-unsaved-state', hasUnsaved),
   activeTabChanged: (info) => ipcRenderer.send('active-tab-changed', info),
   allTabsSavedClose: () => ipcRenderer.send('all-tabs-saved-close'),
+  allTabsDiscardedClose: () => ipcRenderer.send('all-tabs-discarded-close'),
   selectionChanged: (hasSelection) => ipcRenderer.send('selection-changed', hasSelection),
   sendDroppedFiles: (paths) => ipcRenderer.send('dropped-files', paths),
 
