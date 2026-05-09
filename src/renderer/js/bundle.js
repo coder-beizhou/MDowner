@@ -38001,21 +38001,37 @@ img.ProseMirror-separator {
     });
   }
   function initDragDrop(app) {
+    var styleEl = document.createElement("style");
+    styleEl.textContent = [
+      "#drop-indicator{position:fixed;inset:0;display:none;align-items:center;justify-content:center;",
+      "background:rgba(20,18,30,0.42);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);",
+      "z-index:9999;pointer-events:none;}",
+      "#drop-indicator.visible{display:flex;animation:dropOverlayIn .18s ease-out;}",
+      "#drop-indicator .drop-card{position:relative;padding:38px 56px;border-radius:18px;",
+      "background:rgba(255,255,255,0.04);border:2px dashed var(--accent-color);",
+      "box-shadow:0 20px 60px -20px rgba(139,92,246,.55),inset 0 0 0 1px rgba(139,92,246,.12);",
+      "text-align:center;animation:dropCardIn .24s cubic-bezier(.2,.8,.2,1);}",
+      "#drop-indicator .drop-icon{display:block;width:60px;height:60px;margin:0 auto 16px;",
+      "animation:dropFloat 1.8s ease-in-out infinite;}",
+      "#drop-indicator .drop-title{font-size:15px;font-weight:600;letter-spacing:.3px;",
+      "color:rgba(255,255,255,.94);margin-bottom:6px;}",
+      "#drop-indicator .drop-hint{font-size:12px;letter-spacing:.4px;color:rgba(255,255,255,.55);}",
+      "@keyframes dropOverlayIn{from{opacity:0}to{opacity:1}}",
+      "@keyframes dropCardIn{from{opacity:0;transform:translateY(10px) scale(.96)}to{opacity:1;transform:none}}",
+      "@keyframes dropFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}"
+    ].join("");
+    document.head.appendChild(styleEl);
     var dropIndicator = document.createElement("div");
     dropIndicator.id = "drop-indicator";
-    dropIndicator.style.cssText = "display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(18,18,24,0.55);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);z-index:9999;pointer-events:none;";
-    var dropCard = document.createElement("div");
-    dropCard.innerHTML = '<div style="text-align:center;"><svg width="72" height="72" viewBox="0 0 72 72" style="display:block;margin:0 auto 20px;"><circle cx="36" cy="36" r="34" fill="none" stroke="var(--accent-color)" stroke-width="2" stroke-dasharray="8 6" opacity="0.6"/><circle cx="36" cy="36" r="34" fill="none" stroke="var(--accent-color)" stroke-width="2" stroke-dasharray="8 6" opacity="0.3" transform="rotate(30 36 36)"/><circle cx="36" cy="36" r="34" fill="none" stroke="var(--accent-color)" stroke-width="2" stroke-dasharray="8 6" opacity="0.15" transform="rotate(60 36 36)"/><line x1="36" y1="20" x2="36" y2="52" stroke="var(--accent-color)" stroke-width="3" stroke-linecap="round"/><line x1="20" y1="36" x2="52" y2="36" stroke="var(--accent-color)" stroke-width="3" stroke-linecap="round"/></svg><div style="font-size:16px;font-weight:500;color:rgba(255,255,255,0.85);letter-spacing:0.5px;">\u62D6\u653E Markdown \u6587\u4EF6\u5230\u6B64\u5904</div></div>';
-    dropCard.style.cssText = "position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);";
-    dropIndicator.appendChild(dropCard);
+    dropIndicator.innerHTML = '<div class="drop-card"><svg class="drop-icon" viewBox="0 0 64 64" fill="none" stroke="var(--accent-color)" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"><path d="M16 8h22l12 12v32a4 4 0 0 1-4 4H16a4 4 0 0 1-4-4V12a4 4 0 0 1 4-4z"/><path d="M38 8v12h12"/><text x="32" y="46" text-anchor="middle" font-size="11" font-weight="700" fill="var(--accent-color)" stroke="none" font-family="-apple-system,system-ui,sans-serif">MD</text></svg><div class="drop-title">\u62D6\u653E\u5230\u6B64\u5904\u6253\u5F00</div><div class="drop-hint">.md  \xB7  .markdown  \xB7  .txt</div></div>';
     document.body.appendChild(dropIndicator);
     function showIndicator() {
-      dropIndicator.style.display = "";
+      dropIndicator.classList.add("visible");
       var pm = document.querySelector(".ProseMirror");
       if (pm) pm.style.pointerEvents = "none";
     }
     function hideIndicator() {
-      dropIndicator.style.display = "none";
+      dropIndicator.classList.remove("visible");
       var pm = document.querySelector(".ProseMirror");
       if (pm) pm.style.pointerEvents = "";
     }
