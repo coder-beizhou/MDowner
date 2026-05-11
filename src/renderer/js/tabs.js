@@ -168,6 +168,9 @@ export async function switchTab(app, tabId) {
   app.updateStatusBar();
   app.updateOutline();
   app.updateTableControls();
+  if (app.syncFindBarWithActiveTab) {
+    app.syncFindBarWithActiveTab();
+  }
   notifyMain(app);
 }
 

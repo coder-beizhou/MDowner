@@ -51,6 +51,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('toggle-theme');
     ipcRenderer.on('toggle-theme', callback);
   },
+  onOpenFind: (callback) => {
+    ipcRenderer.removeAllListeners('open-find');
+    ipcRenderer.on('open-find', callback);
+  },
   onExportPDF: (callback) => {
     ipcRenderer.removeAllListeners('export-pdf');
     ipcRenderer.on('export-pdf', (event, path) => callback(path));

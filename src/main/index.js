@@ -479,6 +479,7 @@ function createMenu() {
         copyMenuItem = { label: '复制', accelerator: 'CmdOrCtrl+C', enabled: hasSelection, click: () => safeSend('menu-copy') },
         { label: '粘贴', accelerator: 'CmdOrCtrl+V', role: 'paste' },
         { type: 'separator' },
+        { label: '查找', accelerator: 'CmdOrCtrl+F', click: () => safeSend('open-find') },
         { label: '全选', accelerator: 'CmdOrCtrl+A', role: 'selectAll' }
       ]
     },

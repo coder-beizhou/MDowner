@@ -9,6 +9,7 @@ export function initShortcuts(app) {
         case 'i': e.preventDefault(); app.toggleFormat('italic'); return;
         case 'e': e.preventDefault(); app.toggleFormat('code'); return;
         case 'k': e.preventDefault(); app.insertLink(); return;
+        case 'f': e.preventDefault(); app.openFind(); return;
         case '\\': e.preventDefault(); app.toggleSidebar(); return;
         default:
           if (e.key >= '1' && e.key <= '6') {

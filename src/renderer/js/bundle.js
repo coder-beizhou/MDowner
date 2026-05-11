@@ -37163,6 +37163,106 @@ img.ProseMirror-separator {
   });
 
   // src/renderer/js/editor-core.js
+  function escapeRegExp(str) {
+    return String(str || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+  function buildSearchState(doc3, query, activeIndex) {
+    var normalizedQuery = String(query || "");
+    if (!normalizedQuery) {
+      return {
+        query: "",
+        matches: [],
+        activeIndex: -1,
+        decorations: DecorationSet.empty
+      };
+    }
+    var matches2 = [];
+    var regex = new RegExp(escapeRegExp(normalizedQuery), "gi");
+    doc3.descendants(function(node, pos) {
+      if (!node.isText) return;
+      var text = node.text || "";
+      if (!text) return;
+      regex.lastIndex = 0;
+      var match;
+      while ((match = regex.exec(text)) !== null) {
+        var from2 = pos + match.index;
+        var to = from2 + match[0].length;
+        matches2.push({ from: from2, to });
+        if (match[0].length === 0) {
+          regex.lastIndex += 1;
+        }
+      }
+    });
+    var nextActiveIndex = matches2.length === 0 ? -1 : Math.min(Math.max(activeIndex, 0), matches2.length - 1);
+    var decorations = [];
+    for (var i = 0; i < matches2.length; i++) {
+      decorations.push(Decoration.inline(matches2[i].from, matches2[i].to, {
+        class: i === nextActiveIndex ? "search-match search-match-active" : "search-match"
+      }));
+    }
+    return {
+      query: normalizedQuery,
+      matches: matches2,
+      activeIndex: nextActiveIndex,
+      decorations: DecorationSet.create(doc3, decorations)
+    };
+  }
+  function getSearchState(editor) {
+    if (!editor || !editor.state) {
+      return { query: "", matches: [], activeIndex: -1, total: 0 };
+    }
+    var state = searchPluginKey.getState(editor.state) || { query: "", matches: [], activeIndex: -1 };
+    return {
+      query: state.query || "",
+      matches: state.matches || [],
+      activeIndex: typeof state.activeIndex === "number" ? state.activeIndex : -1,
+      total: Array.isArray(state.matches) ? state.matches.length : 0
+    };
+  }
+  function revealSearchMatch(editor, index) {
+    var state = getSearchState(editor);
+    if (!state.total) return false;
+    var safeIndex = (index % state.total + state.total) % state.total;
+    var match = state.matches[safeIndex];
+    if (!match) return false;
+    var tr2 = editor.state.tr.setMeta(searchPluginKey, {
+      type: "setActiveIndex",
+      activeIndex: safeIndex
+    }).setSelection(TextSelection.create(editor.state.doc, match.from, match.to)).scrollIntoView();
+    editor.view.dispatch(tr2);
+    editor.commands.focus(match.to);
+    return true;
+  }
+  function setSearchQuery(editor, query) {
+    if (!editor || !editor.state) return getSearchState(editor);
+    var tr2 = editor.state.tr.setMeta(searchPluginKey, {
+      type: "setQuery",
+      query: String(query || "")
+    });
+    editor.view.dispatch(tr2);
+    var nextState = getSearchState(editor);
+    if (nextState.total > 0) {
+      revealSearchMatch(editor, nextState.activeIndex >= 0 ? nextState.activeIndex : 0);
+      nextState = getSearchState(editor);
+    }
+    return nextState;
+  }
+  function clearSearchQuery(editor) {
+    if (!editor || !editor.state) return;
+    editor.view.dispatch(editor.state.tr.setMeta(searchPluginKey, { type: "clearQuery" }));
+  }
+  function goToNextSearchMatch(editor) {
+    var state = getSearchState(editor);
+    if (!state.total) return state;
+    revealSearchMatch(editor, state.activeIndex + 1);
+    return getSearchState(editor);
+  }
+  function goToPrevSearchMatch(editor) {
+    var state = getSearchState(editor);
+    if (!state.total) return state;
+    revealSearchMatch(editor, state.activeIndex - 1);
+    return getSearchState(editor);
+  }
   function findCodeBlocks(doc3) {
     var blocks = [];
     doc3.descendants(function(node, pos) {
@@ -37344,7 +37444,8 @@ img.ProseMirror-separator {
           Link.configure({ openOnClick: false, HTMLAttributes: { class: "link" } }),
           Image.configure({ HTMLAttributes: { class: "image" } }),
           Placeholder.configure({ placeholder: "\u5F00\u59CB\u8F93\u5165..." }),
-          CharacterCount
+          CharacterCount,
+          SearchHighlight
         ],
         content: "",
         editorProps: {
@@ -37401,7 +37502,7 @@ img.ProseMirror-separator {
     editorElement.style.fontSize = `${app.config.fontSize}px`;
     editorElement.style.lineHeight = app.config.lineHeight.toString();
   }
-  var import_core30, import_javascript, import_typescript, import_python, import_java, import_cpp, import_csharp, import_go, import_php, import_ruby, import_sql, import_bash, import_css, import_json, import_xml, import_yaml, import_markdown, import_rust, import_swift, import_kotlin, import_dart, import_lua, import_r, import_scala, import_shell, import_powershell, import_dockerfile, import_graphql, import_scss, import_ini, import_diff, import_makefile, import_perl, import_haskell, import_julia, import_objectivec, import_protobuf, import_cmake, import_elixir, import_clojure, import_groovy, HL_LANGS, CodeHighlight, NoCodeBlockFirst;
+  var import_core30, import_javascript, import_typescript, import_python, import_java, import_cpp, import_csharp, import_go, import_php, import_ruby, import_sql, import_bash, import_css, import_json, import_xml, import_yaml, import_markdown, import_rust, import_swift, import_kotlin, import_dart, import_lua, import_r, import_scala, import_shell, import_powershell, import_dockerfile, import_graphql, import_scss, import_ini, import_diff, import_makefile, import_perl, import_haskell, import_julia, import_objectivec, import_protobuf, import_cmake, import_elixir, import_clojure, import_groovy, HL_LANGS, searchPluginKey, SearchHighlight, CodeHighlight, NoCodeBlockFirst;
   var init_editor_core = __esm({
     "src/renderer/js/editor-core.js"() {
       init_dist16();
@@ -37501,6 +37602,44 @@ img.ProseMirror-separator {
       import_core30.default.registerLanguage("clojure", import_clojure.default);
       import_core30.default.registerLanguage("groovy", import_groovy.default);
       HL_LANGS = import_core30.default.listLanguages();
+      searchPluginKey = new PluginKey("editorSearch");
+      SearchHighlight = Extension.create({
+        name: "searchHighlight",
+        addProseMirrorPlugins() {
+          return [new Plugin({
+            key: searchPluginKey,
+            state: {
+              init: function(_, state) {
+                return buildSearchState(state.doc, "", -1);
+              },
+              apply: function(tr2, oldState, _oldEditorState, newEditorState) {
+                var meta = tr2.getMeta(searchPluginKey);
+                if (meta) {
+                  if (meta.type === "setQuery") {
+                    return buildSearchState(newEditorState.doc, meta.query, 0);
+                  }
+                  if (meta.type === "clearQuery") {
+                    return buildSearchState(newEditorState.doc, "", -1);
+                  }
+                  if (meta.type === "setActiveIndex") {
+                    return buildSearchState(newEditorState.doc, oldState.query, meta.activeIndex);
+                  }
+                }
+                if (tr2.docChanged) {
+                  return buildSearchState(newEditorState.doc, oldState.query, oldState.activeIndex);
+                }
+                return oldState;
+              }
+            },
+            props: {
+              decorations: function(state) {
+                var pluginState = searchPluginKey.getState(state);
+                return pluginState ? pluginState.decorations : DecorationSet.empty;
+              }
+            }
+          })];
+        }
+      });
       CodeHighlight = Extension.create({
         name: "codeHighlight",
         addProseMirrorPlugins() {
@@ -37931,6 +38070,10 @@ img.ProseMirror-separator {
           case "k":
             e.preventDefault();
             app.insertLink();
+            return;
+          case "f":
+            e.preventDefault();
+            app.openFind();
             return;
           case "\\":
             e.preventDefault();
@@ -40786,6 +40929,9 @@ ${content}</tr>
     app.updateStatusBar();
     app.updateOutline();
     app.updateTableControls();
+    if (app.syncFindBarWithActiveTab) {
+      app.syncFindBarWithActiveTab();
+    }
     notifyMain(app);
   }
   async function closeTab(app, tabId) {
@@ -41332,6 +41478,9 @@ ${content}</tr>
           this.tabs = [];
           this.activeTabId = null;
           this.isEditorReady = false;
+          this.findBarEl = null;
+          this.findInputEl = null;
+          this.findCountEl = null;
           this.config = {
             theme: "light",
             fontSize: 16,
@@ -41376,6 +41525,7 @@ ${content}</tr>
           await loadConfig(this);
           initTabBar(this);
           initToolbar(this);
+          this.initFindBar();
           initShortcuts(this);
           initSidebar(this);
           initStatusBar(this);
@@ -41532,6 +41682,128 @@ ${content}</tr>
             self.updateToolbarState();
           }, 50);
         }
+        initFindBar() {
+          var container = document.getElementById("editor-container");
+          if (!container || this.findBarEl) return;
+          var bar = document.createElement("div");
+          bar.className = "find-bar hidden";
+          bar.innerHTML = '<input type="text" class="find-input" placeholder="\u641C\u7D22\u5F53\u524D\u6587\u6863..." aria-label="\u641C\u7D22\u5F53\u524D\u6587\u6863"><div class="find-count">0/0</div><button type="button" class="find-btn" data-find="prev" title="\u4E0A\u4E00\u4E2A (Shift+Enter)">\u2191</button><button type="button" class="find-btn" data-find="next" title="\u4E0B\u4E00\u4E2A (Enter)">\u2193</button><button type="button" class="find-btn find-close" data-find="close" title="\u5173\u95ED (Esc)">\xD7</button>';
+          container.appendChild(bar);
+          this.findBarEl = bar;
+          this.findInputEl = bar.querySelector(".find-input");
+          this.findCountEl = bar.querySelector(".find-count");
+          var self = this;
+          this.findInputEl.addEventListener("input", function() {
+            self.updateFindQuery(self.findInputEl.value);
+          });
+          this.findInputEl.addEventListener("keydown", function(e) {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              if (e.shiftKey) {
+                self.findPrev();
+              } else {
+                self.findNext();
+              }
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              self.closeFindBar();
+            }
+          });
+          bar.addEventListener("click", function(e) {
+            var action = e.target && e.target.getAttribute("data-find");
+            if (action === "prev") {
+              self.findPrev();
+            } else if (action === "next") {
+              self.findNext();
+            } else if (action === "close") {
+              self.closeFindBar();
+            }
+          });
+        }
+        openFindBar() {
+          if (!this.findBarEl) this.initFindBar();
+          if (!this.findBarEl || !this.findInputEl) return;
+          var tab = getActiveTab(this);
+          if (!tab) return;
+          this.findBarEl.classList.remove("hidden");
+          var editor = tab.editor;
+          var existingQuery = tab.findQuery || "";
+          if (!existingQuery && editor && editor.state && !editor.state.selection.empty) {
+            var selectedText = editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, " ");
+            if (selectedText && !/\n/.test(selectedText) && selectedText.length <= 120) {
+              existingQuery = selectedText;
+            }
+          }
+          this.findInputEl.value = existingQuery;
+          this.updateFindQuery(existingQuery, { focusInput: true });
+          setTimeout(() => this.findInputEl && this.findInputEl.select(), 0);
+        }
+        closeFindBar() {
+          if (!this.findBarEl) return;
+          var tab = getActiveTab(this);
+          if (tab && tab.editor) {
+            clearSearchQuery(tab.editor);
+            tab.findQuery = "";
+            tab.findActiveIndex = -1;
+            tab.editor.commands.focus();
+          }
+          this.findBarEl.classList.add("hidden");
+          if (this.findInputEl) this.findInputEl.value = "";
+          this.renderFindCount({ total: 0, activeIndex: -1 });
+        }
+        renderFindCount(state) {
+          if (!this.findCountEl) return;
+          var total = state && typeof state.total === "number" ? state.total : 0;
+          var activeIndex = state && typeof state.activeIndex === "number" ? state.activeIndex : -1;
+          this.findCountEl.textContent = total > 0 ? activeIndex + 1 + "/" + total : "0/0";
+        }
+        updateFindQuery(query, options2) {
+          options2 = options2 || {};
+          var tab = getActiveTab(this);
+          if (!tab || !tab.editor) {
+            this.renderFindCount({ total: 0, activeIndex: -1 });
+            return;
+          }
+          var nextQuery = String(query || "");
+          tab.findQuery = nextQuery;
+          var state = nextQuery ? setSearchQuery(tab.editor, nextQuery) : (clearSearchQuery(tab.editor), getSearchState(tab.editor));
+          tab.findActiveIndex = state.activeIndex;
+          this.renderFindCount(state);
+          if (options2.focusInput && this.findInputEl) {
+            this.findInputEl.focus();
+          }
+        }
+        findNext() {
+          var tab = getActiveTab(this);
+          if (!tab || !tab.editor) return;
+          var state = goToNextSearchMatch(tab.editor);
+          tab.findActiveIndex = state.activeIndex;
+          this.renderFindCount(state);
+        }
+        findPrev() {
+          var tab = getActiveTab(this);
+          if (!tab || !tab.editor) return;
+          var state = goToPrevSearchMatch(tab.editor);
+          tab.findActiveIndex = state.activeIndex;
+          this.renderFindCount(state);
+        }
+        syncFindBarWithActiveTab() {
+          if (!this.findBarEl) return;
+          var tab = getActiveTab(this);
+          if (!tab || !tab.editor) {
+            this.findBarEl.classList.add("hidden");
+            this.renderFindCount({ total: 0, activeIndex: -1 });
+            return;
+          }
+          if (this.findBarEl.classList.contains("hidden")) return;
+          var query = tab.findQuery || "";
+          if (this.findInputEl) {
+            this.findInputEl.value = query;
+          }
+          var state = query ? setSearchQuery(tab.editor, query) : (clearSearchQuery(tab.editor), getSearchState(tab.editor));
+          tab.findActiveIndex = state.activeIndex;
+          this.renderFindCount(state);
+        }
         async openFileInTab(path, content) {
           var existing = findTabByFilePath(this, path);
           if (existing) {
@@ -41654,6 +41926,9 @@ ${content}</tr>
         exportDOCX(p) {
           return exportDOCX(this, p);
         }
+        openFind() {
+          this.openFindBar();
+        }
         switchTab(id) {
           return switchTab(this, id);
         }
@@ -41704,6 +41979,11 @@ ${content}</tr>
         onContentChange() {
           if (this._suppressContentChange) return;
           var tab = getActiveTab(this);
+          if (tab && tab.findQuery && tab.editor) {
+            var searchState = setSearchQuery(tab.editor, tab.findQuery);
+            tab.findActiveIndex = searchState.activeIndex;
+            this.renderFindCount(searchState);
+          }
           if (tab && !tab.isModified) {
             tab.isModified = true;
             this.updateStatusBar();
@@ -41772,6 +42052,11 @@ ${content}</tr>
           window.electronAPI.onToggleTheme(function() {
             self.toggleTheme();
           });
+          if (window.electronAPI.onOpenFind) {
+            window.electronAPI.onOpenFind(function() {
+              self.openFindBar();
+            });
+          }
           window.electronAPI.onExportPDF(function(path) {
             self.exportPDF(path);
           });

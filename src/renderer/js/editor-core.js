@@ -12,7 +12,7 @@ import Link from '../../../node_modules/@tiptap/extension-link/dist/index.js';
 import Image from '../../../node_modules/@tiptap/extension-image/dist/index.js';
 import Placeholder from '../../../node_modules/@tiptap/extension-placeholder/dist/index.js';
 import CharacterCount from '../../../node_modules/@tiptap/extension-character-count/dist/index.js';
-import { Plugin, PluginKey } from '../../../node_modules/@tiptap/pm/state/index.js';
+import { Plugin, PluginKey, TextSelection } from '../../../node_modules/@tiptap/pm/state/index.js';
 import { Decoration, DecorationSet } from '../../../node_modules/@tiptap/pm/view/index.js';
 
 // 导入常用语言（覆盖主流开发语言、脚本、配置、标记语言）
@@ -101,6 +101,156 @@ hljs.registerLanguage('clojure', clojure);
 hljs.registerLanguage('groovy', groovy);
 
 const HL_LANGS = hljs.listLanguages();
+const searchPluginKey = new PluginKey('editorSearch');
+
+function escapeRegExp(str) {
+  return String(str || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function buildSearchState(doc, query, activeIndex) {
+  var normalizedQuery = String(query || '');
+  if (!normalizedQuery) {
+    return {
+      query: '',
+      matches: [],
+      activeIndex: -1,
+      decorations: DecorationSet.empty
+    };
+  }
+
+  var matches = [];
+  var regex = new RegExp(escapeRegExp(normalizedQuery), 'gi');
+  doc.descendants(function(node, pos) {
+    if (!node.isText) return;
+    var text = node.text || '';
+    if (!text) return;
+    regex.lastIndex = 0;
+    var match;
+    while ((match = regex.exec(text)) !== null) {
+      var from = pos + match.index;
+      var to = from + match[0].length;
+      matches.push({ from: from, to: to });
+      if (match[0].length === 0) {
+        regex.lastIndex += 1;
+      }
+    }
+  });
+
+  var nextActiveIndex = matches.length === 0 ? -1 : Math.min(Math.max(activeIndex, 0), matches.length - 1);
+  var decorations = [];
+  for (var i = 0; i < matches.length; i++) {
+    decorations.push(Decoration.inline(matches[i].from, matches[i].to, {
+      class: i === nextActiveIndex ? 'search-match search-match-active' : 'search-match'
+    }));
+  }
+
+  return {
+    query: normalizedQuery,
+    matches: matches,
+    activeIndex: nextActiveIndex,
+    decorations: DecorationSet.create(doc, decorations)
+  };
+}
+
+const SearchHighlight = Extension.create({
+  name: 'searchHighlight',
+  addProseMirrorPlugins() {
+    return [new Plugin({
+      key: searchPluginKey,
+      state: {
+        init: function(_, state) {
+          return buildSearchState(state.doc, '', -1);
+        },
+        apply: function(tr, oldState, _oldEditorState, newEditorState) {
+          var meta = tr.getMeta(searchPluginKey);
+          if (meta) {
+            if (meta.type === 'setQuery') {
+              return buildSearchState(newEditorState.doc, meta.query, 0);
+            }
+            if (meta.type === 'clearQuery') {
+              return buildSearchState(newEditorState.doc, '', -1);
+            }
+            if (meta.type === 'setActiveIndex') {
+              return buildSearchState(newEditorState.doc, oldState.query, meta.activeIndex);
+            }
+          }
+          if (tr.docChanged) {
+            return buildSearchState(newEditorState.doc, oldState.query, oldState.activeIndex);
+          }
+          return oldState;
+        }
+      },
+      props: {
+        decorations: function(state) {
+          var pluginState = searchPluginKey.getState(state);
+          return pluginState ? pluginState.decorations : DecorationSet.empty;
+        }
+      }
+    })];
+  }
+});
+
+export function getSearchState(editor) {
+  if (!editor || !editor.state) {
+    return { query: '', matches: [], activeIndex: -1, total: 0 };
+  }
+  var state = searchPluginKey.getState(editor.state) || { query: '', matches: [], activeIndex: -1 };
+  return {
+    query: state.query || '',
+    matches: state.matches || [],
+    activeIndex: typeof state.activeIndex === 'number' ? state.activeIndex : -1,
+    total: Array.isArray(state.matches) ? state.matches.length : 0
+  };
+}
+
+function revealSearchMatch(editor, index) {
+  var state = getSearchState(editor);
+  if (!state.total) return false;
+  var safeIndex = ((index % state.total) + state.total) % state.total;
+  var match = state.matches[safeIndex];
+  if (!match) return false;
+  var tr = editor.state.tr.setMeta(searchPluginKey, {
+    type: 'setActiveIndex',
+    activeIndex: safeIndex
+  }).setSelection(TextSelection.create(editor.state.doc, match.from, match.to)).scrollIntoView();
+  editor.view.dispatch(tr);
+  editor.commands.focus(match.to);
+  return true;
+}
+
+export function setSearchQuery(editor, query) {
+  if (!editor || !editor.state) return getSearchState(editor);
+  var tr = editor.state.tr.setMeta(searchPluginKey, {
+    type: 'setQuery',
+    query: String(query || '')
+  });
+  editor.view.dispatch(tr);
+  var nextState = getSearchState(editor);
+  if (nextState.total > 0) {
+    revealSearchMatch(editor, nextState.activeIndex >= 0 ? nextState.activeIndex : 0);
+    nextState = getSearchState(editor);
+  }
+  return nextState;
+}
+
+export function clearSearchQuery(editor) {
+  if (!editor || !editor.state) return;
+  editor.view.dispatch(editor.state.tr.setMeta(searchPluginKey, { type: 'clearQuery' }));
+}
+
+export function goToNextSearchMatch(editor) {
+  var state = getSearchState(editor);
+  if (!state.total) return state;
+  revealSearchMatch(editor, state.activeIndex + 1);
+  return getSearchState(editor);
+}
+
+export function goToPrevSearchMatch(editor) {
+  var state = getSearchState(editor);
+  if (!state.total) return state;
+  revealSearchMatch(editor, state.activeIndex - 1);
+  return getSearchState(editor);
+}
 
 // 代码高亮 TipTap 扩展
 const CodeHighlight = Extension.create({
@@ -331,7 +481,8 @@ export function initEditor(app, editorElement, tabId) {
         Link.configure({ openOnClick: false, HTMLAttributes: { class: 'link' } }),
         Image.configure({ HTMLAttributes: { class: 'image' } }),
         Placeholder.configure({ placeholder: '开始输入...' }),
-        CharacterCount
+        CharacterCount,
+        SearchHighlight
       ],
       content: '',
       editorProps: {

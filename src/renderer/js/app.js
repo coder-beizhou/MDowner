@@ -1,5 +1,5 @@
 // MDowner - Markdown编辑器主应用（模块化入口 + 多标签页）
-import { initEditor, applyEditorStyles } from './editor-core.js';
+import { initEditor, applyEditorStyles, setSearchQuery, clearSearchQuery, goToNextSearchMatch, goToPrevSearchMatch, getSearchState } from './editor-core.js';
 import { initToolbar, updateToolbarState, toggleFormat, toggleHeading, toggleList, toggleBlockquote, toggleCodeBlock } from './toolbar.js';
 import { initTableOverlay, updateTableControls, insertTable, insertHr, addTableRow, deleteTableRow, addTableCol, deleteTableCol } from './table.js';
 import { initShortcuts, initDragDrop } from './shortcuts.js';
@@ -15,6 +15,9 @@ class MDownerApp {
     this.tabs = [];
     this.activeTabId = null;
     this.isEditorReady = false;
+    this.findBarEl = null;
+    this.findInputEl = null;
+    this.findCountEl = null;
     this.config = {
       theme: 'light',
       fontSize: 16,
@@ -45,6 +48,7 @@ class MDownerApp {
     await loadConfig(this);
     initTabBar(this);
     initToolbar(this);
+    this.initFindBar();
     initShortcuts(this);
     initSidebar(this);
     initStatusBar(this);
@@ -222,6 +226,147 @@ class MDownerApp {
   }
 
 
+  initFindBar() {
+    var container = document.getElementById('editor-container');
+    if (!container || this.findBarEl) return;
+
+    var bar = document.createElement('div');
+    bar.className = 'find-bar hidden';
+    bar.innerHTML = ''
+      + '<input type="text" class="find-input" placeholder="搜索当前文档..." aria-label="搜索当前文档">'
+      + '<div class="find-count">0/0</div>'
+      + '<button type="button" class="find-btn" data-find="prev" title="上一个 (Shift+Enter)">↑</button>'
+      + '<button type="button" class="find-btn" data-find="next" title="下一个 (Enter)">↓</button>'
+      + '<button type="button" class="find-btn find-close" data-find="close" title="关闭 (Esc)">×</button>';
+    container.appendChild(bar);
+
+    this.findBarEl = bar;
+    this.findInputEl = bar.querySelector('.find-input');
+    this.findCountEl = bar.querySelector('.find-count');
+
+    var self = this;
+    this.findInputEl.addEventListener('input', function() {
+      self.updateFindQuery(self.findInputEl.value);
+    });
+    this.findInputEl.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          self.findPrev();
+        } else {
+          self.findNext();
+        }
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        self.closeFindBar();
+      }
+    });
+
+    bar.addEventListener('click', function(e) {
+      var action = e.target && e.target.getAttribute('data-find');
+      if (action === 'prev') {
+        self.findPrev();
+      } else if (action === 'next') {
+        self.findNext();
+      } else if (action === 'close') {
+        self.closeFindBar();
+      }
+    });
+  }
+
+  openFindBar() {
+    if (!this.findBarEl) this.initFindBar();
+    if (!this.findBarEl || !this.findInputEl) return;
+
+    var tab = getActiveTab(this);
+    if (!tab) return;
+
+    this.findBarEl.classList.remove('hidden');
+    var editor = tab.editor;
+    var existingQuery = tab.findQuery || '';
+    if (!existingQuery && editor && editor.state && !editor.state.selection.empty) {
+      var selectedText = editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, ' ');
+      if (selectedText && !/\n/.test(selectedText) && selectedText.length <= 120) {
+        existingQuery = selectedText;
+      }
+    }
+    this.findInputEl.value = existingQuery;
+    this.updateFindQuery(existingQuery, { focusInput: true });
+    setTimeout(() => this.findInputEl && this.findInputEl.select(), 0);
+  }
+
+  closeFindBar() {
+    if (!this.findBarEl) return;
+    var tab = getActiveTab(this);
+    if (tab && tab.editor) {
+      clearSearchQuery(tab.editor);
+      tab.findQuery = '';
+      tab.findActiveIndex = -1;
+      tab.editor.commands.focus();
+    }
+    this.findBarEl.classList.add('hidden');
+    if (this.findInputEl) this.findInputEl.value = '';
+    this.renderFindCount({ total: 0, activeIndex: -1 });
+  }
+
+  renderFindCount(state) {
+    if (!this.findCountEl) return;
+    var total = state && typeof state.total === 'number' ? state.total : 0;
+    var activeIndex = state && typeof state.activeIndex === 'number' ? state.activeIndex : -1;
+    this.findCountEl.textContent = total > 0 ? (activeIndex + 1) + '/' + total : '0/0';
+  }
+
+  updateFindQuery(query, options) {
+    options = options || {};
+    var tab = getActiveTab(this);
+    if (!tab || !tab.editor) {
+      this.renderFindCount({ total: 0, activeIndex: -1 });
+      return;
+    }
+    var nextQuery = String(query || '');
+    tab.findQuery = nextQuery;
+    var state = nextQuery ? setSearchQuery(tab.editor, nextQuery) : (clearSearchQuery(tab.editor), getSearchState(tab.editor));
+    tab.findActiveIndex = state.activeIndex;
+    this.renderFindCount(state);
+    if (options.focusInput && this.findInputEl) {
+      this.findInputEl.focus();
+    }
+  }
+
+  findNext() {
+    var tab = getActiveTab(this);
+    if (!tab || !tab.editor) return;
+    var state = goToNextSearchMatch(tab.editor);
+    tab.findActiveIndex = state.activeIndex;
+    this.renderFindCount(state);
+  }
+
+  findPrev() {
+    var tab = getActiveTab(this);
+    if (!tab || !tab.editor) return;
+    var state = goToPrevSearchMatch(tab.editor);
+    tab.findActiveIndex = state.activeIndex;
+    this.renderFindCount(state);
+  }
+
+  syncFindBarWithActiveTab() {
+    if (!this.findBarEl) return;
+    var tab = getActiveTab(this);
+    if (!tab || !tab.editor) {
+      this.findBarEl.classList.add('hidden');
+      this.renderFindCount({ total: 0, activeIndex: -1 });
+      return;
+    }
+    if (this.findBarEl.classList.contains('hidden')) return;
+    var query = tab.findQuery || '';
+    if (this.findInputEl) {
+      this.findInputEl.value = query;
+    }
+    var state = query ? setSearchQuery(tab.editor, query) : (clearSearchQuery(tab.editor), getSearchState(tab.editor));
+    tab.findActiveIndex = state.activeIndex;
+    this.renderFindCount(state);
+  }
+
   async openFileInTab(path, content) {
     var existing = findTabByFilePath(this, path);
     if (existing) {
@@ -287,6 +432,7 @@ class MDownerApp {
   saveDraft() { return saveDraft(this); }
   exportPDF(p) { return exportPDF(this, p); }
   exportDOCX(p) { return exportDOCX(this, p); }
+  openFind() { this.openFindBar(); }
   switchTab(id) { return switchTab(this, id); }
   closeActiveTab() { var t = getActiveTab(this); if (t) closeTab(this, t.id); }
   nextTab() { nextTab(this); }
@@ -307,6 +453,11 @@ class MDownerApp {
   onContentChange() {
     if (this._suppressContentChange) return;
     var tab = getActiveTab(this);
+    if (tab && tab.findQuery && tab.editor) {
+      var searchState = setSearchQuery(tab.editor, tab.findQuery);
+      tab.findActiveIndex = searchState.activeIndex;
+      this.renderFindCount(searchState);
+    }
     if (tab && !tab.isModified) {
       tab.isModified = true;
       this.updateStatusBar();
@@ -361,6 +512,9 @@ class MDownerApp {
     });
     window.electronAPI.onToggleSidebar(function() { self.toggleSidebar(); });
     window.electronAPI.onToggleTheme(function() { self.toggleTheme(); });
+    if (window.electronAPI.onOpenFind) {
+      window.electronAPI.onOpenFind(function() { self.openFindBar(); });
+    }
     window.electronAPI.onExportPDF(function(path) { self.exportPDF(path); });
     window.electronAPI.onExportDOCX(function(path) { self.exportDOCX(path); });
     window.electronAPI.onMenuCut(function() {
