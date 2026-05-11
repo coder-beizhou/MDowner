@@ -41021,6 +41021,12 @@ ${content}</tr>
       }
       clearTimeout(app._autoDetectTimer);
       if (tab.editor && tab.editor._autoDetect) tab.editor._autoDetect();
+      if (app.activeTabId === tab.id) {
+        app.updateStatusBar();
+        app.updateOutline();
+        app.updateToolbarState();
+        app.updateTableControls();
+      }
     } catch (error) {
       console.error("Failed to set content:", error);
     } finally {
@@ -41261,17 +41267,31 @@ ${content}</tr>
   function initStatusBar(app) {
     app.updateStatusBar();
   }
+  function getStatusText(app) {
+    if (!app.editor || !app.isEditorReady || typeof app.editor.getText !== "function") {
+      return "";
+    }
+    return app.editor.getText({ blockSeparator: "\n" }) || "";
+  }
+  function countVisibleCharacters(text) {
+    return String(text || "").replace(/\s/g, "").length;
+  }
+  function countVisibleLines(text) {
+    var normalized = String(text || "").replace(/\r\n?/g, "\n");
+    if (!normalized) return 1;
+    return normalized.split("\n").length;
+  }
   function updateStatusBar(app) {
     if (!app.editor || !app.isEditorReady) return;
     const wordsElement = document.getElementById("status-words");
     const linesElement = document.getElementById("status-lines");
     const modifiedElement = document.getElementById("status-modified");
+    var text = getStatusText(app);
     if (wordsElement) {
-      const words = app.editor.storage.characterCount ? app.editor.storage.characterCount.words() : 0;
-      wordsElement.textContent = `\u5B57\u6570: ${words}`;
+      wordsElement.textContent = `\u5B57\u6570: ${countVisibleCharacters(text)}`;
     }
     if (linesElement) {
-      linesElement.textContent = `\u884C\u6570: ${app.editor.getText().split("\n").length}`;
+      linesElement.textContent = `\u884C\u6570: ${countVisibleLines(text)}`;
     }
     if (modifiedElement) {
       modifiedElement.textContent = app.isModified ? "\u5DF2\u4FEE\u6539" : "";

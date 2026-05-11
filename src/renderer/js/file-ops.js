@@ -70,6 +70,12 @@ export function setFileContent(app, tab, content) {
     }
     clearTimeout(app._autoDetectTimer);
     if (tab.editor && tab.editor._autoDetect) tab.editor._autoDetect();
+    if (app.activeTabId === tab.id) {
+      app.updateStatusBar();
+      app.updateOutline();
+      app.updateToolbarState();
+      app.updateTableControls();
+    }
   } catch (error) {
     console.error('Failed to set content:', error);
   } finally {

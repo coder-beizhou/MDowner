@@ -96,17 +96,34 @@ export function initStatusBar(app) {
   app.updateStatusBar();
 }
 
+function getStatusText(app) {
+  if (!app.editor || !app.isEditorReady || typeof app.editor.getText !== 'function') {
+    return '';
+  }
+  return app.editor.getText({ blockSeparator: '\n' }) || '';
+}
+
+function countVisibleCharacters(text) {
+  return String(text || '').replace(/\s/g, '').length;
+}
+
+function countVisibleLines(text) {
+  var normalized = String(text || '').replace(/\r\n?/g, '\n');
+  if (!normalized) return 1;
+  return normalized.split('\n').length;
+}
+
 export function updateStatusBar(app) {
   if (!app.editor || !app.isEditorReady) return;
   const wordsElement = document.getElementById('status-words');
   const linesElement = document.getElementById('status-lines');
   const modifiedElement = document.getElementById('status-modified');
+  var text = getStatusText(app);
   if (wordsElement) {
-    const words = app.editor.storage.characterCount ? app.editor.storage.characterCount.words() : 0;
-    wordsElement.textContent = `字数: ${words}`;
+    wordsElement.textContent = `字数: ${countVisibleCharacters(text)}`;
   }
   if (linesElement) {
-    linesElement.textContent = `行数: ${app.editor.getText().split('\n').length}`;
+    linesElement.textContent = `行数: ${countVisibleLines(text)}`;
   }
   if (modifiedElement) {
     modifiedElement.textContent = app.isModified ? '已修改' : '';
