@@ -6,6 +6,31 @@ function escapeHTML(str) {
   return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// 让 marked 把 GFM 任务列表（`- [x]` / `- [ ]`）渲染成 TipTap TaskList/TaskItem 能识别的结构，
+// 否则 marked 默认只产出带 <input> 的普通 <ul>，重开文件时会落成普通点列表。
+var taskListRenderer = new marked.Renderer();
+taskListRenderer.listitem = function(text, task, checked) {
+  if (task) {
+    // marked 会把 checkbox <input> 前置到内容里：tight 列表在文本开头，loose 列表在 <p> 内开头；
+    // 用非锚定正则把它剥掉，由下面的 label/input 重建勾选态。
+    var clean = text.replace(/<input[^>]*type="checkbox"[^>]*>\s*/, '');
+    return '<li data-type="taskItem" data-checked="' + (checked ? 'true' : 'false') + '">'
+      + '<label contenteditable="false"><input type="checkbox"' + (checked ? ' checked="checked"' : '') + '><span></span></label>'
+      + '<div>' + clean + '</div>'
+      + '</li>\n';
+  }
+  return '<li>' + text + '</li>\n';
+};
+taskListRenderer.list = function(body, ordered, start) {
+  if (!ordered && body.indexOf('data-type="taskItem"') !== -1) {
+    return '<ul data-type="taskList">\n' + body + '</ul>\n';
+  }
+  var type = ordered ? 'ol' : 'ul';
+  var startatt = (ordered && start !== 1) ? (' start="' + start + '"') : '';
+  return '<' + type + startatt + '>\n' + body + '</' + type + '>\n';
+};
+
+
 function extractFrontmatterBlock(raw) {
   if (!raw || (!raw.startsWith('---\n') && !raw.startsWith('---\r\n'))) {
     return null;
@@ -23,11 +48,11 @@ function extractFrontmatterBlock(raw) {
 function renderMarkdownContent(raw) {
   var frontmatter = extractFrontmatterBlock(raw);
   if (!frontmatter) {
-    return marked.parse(raw);
+    return marked.parse(raw, { renderer: taskListRenderer });
   }
   var html = '<pre data-frontmatter="true" data-language="yaml"><code class="language-yaml">' + escapeHTML(frontmatter.body) + '</code></pre>';
   if (frontmatter.rest) {
-    html += marked.parse(frontmatter.rest);
+    html += marked.parse(frontmatter.rest, { renderer: taskListRenderer });
   }
   return html;
 }

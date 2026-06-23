@@ -12,6 +12,21 @@ turndownService.addRule('frontmatterBlock', {
     return '\n\n---\n' + body + '\n---\n\n';
   }
 });
+// 任务列表项：把 TipTap 的 <li data-type="taskItem" data-checked="..."> 转成 GFM `- [x] ` / `- [ ] `，
+// 否则默认 listItem 规则会丢掉勾选状态，保存后重开退化为普通点列表。
+turndownService.addRule('taskItem', {
+  filter: function(node) {
+    return node.nodeName === 'LI' && node.getAttribute && node.getAttribute('data-type') === 'taskItem';
+  },
+  replacement: function(content, node, options) {
+    var checked = node.getAttribute('data-checked') === 'true';
+    var prefix = options.bulletListMarker + ' [' + (checked ? 'x' : ' ') + '] ';
+    var isParagraph = /\n$/.test(content);
+    content = content.replace(/^\n+/, '').replace(/\n+$/, '') + (isParagraph ? '\n' : '');
+    content = content.replace(/\n/gm, '\n' + ' '.repeat(prefix.length));
+    return prefix + content + (node.nextSibling ? '\n' : '');
+  }
+});
 
 // 直接获取 Electron API
 const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');

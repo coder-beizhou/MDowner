@@ -41132,11 +41132,11 @@ ${content}</tr>
   function renderMarkdownContent(raw) {
     var frontmatter = extractFrontmatterBlock(raw);
     if (!frontmatter) {
-      return marked.parse(raw);
+      return marked.parse(raw, { renderer: taskListRenderer });
     }
     var html2 = '<pre data-frontmatter="true" data-language="yaml"><code class="language-yaml">' + escapeHTML(frontmatter.body) + "</code></pre>";
     if (frontmatter.rest) {
-      html2 += marked.parse(frontmatter.rest);
+      html2 += marked.parse(frontmatter.rest, { renderer: taskListRenderer });
     }
     return html2;
   }
@@ -41290,10 +41290,27 @@ ${content}</tr>
       alert("\u5BFC\u51FADOCX\u5931\u8D25: " + error.message);
     }
   }
+  var taskListRenderer;
   var init_file_ops = __esm({
     "src/renderer/js/file-ops.js"() {
       init_marked_esm();
       init_tabs();
+      taskListRenderer = new marked.Renderer();
+      taskListRenderer.listitem = function(text, task, checked) {
+        if (task) {
+          var clean = text.replace(/<input[^>]*type="checkbox"[^>]*>\s*/, "");
+          return '<li data-type="taskItem" data-checked="' + (checked ? "true" : "false") + '"><label contenteditable="false"><input type="checkbox"' + (checked ? ' checked="checked"' : "") + "><span></span></label><div>" + clean + "</div></li>\n";
+        }
+        return "<li>" + text + "</li>\n";
+      };
+      taskListRenderer.list = function(body, ordered, start) {
+        if (!ordered && body.indexOf('data-type="taskItem"') !== -1) {
+          return '<ul data-type="taskList">\n' + body + "</ul>\n";
+        }
+        var type = ordered ? "ol" : "ul";
+        var startatt = ordered && start !== 1 ? ' start="' + start + '"' : "";
+        return "<" + type + startatt + ">\n" + body + "</" + type + ">\n";
+      };
     }
   });
 
