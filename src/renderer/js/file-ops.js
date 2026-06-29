@@ -81,13 +81,25 @@ export function openFile(app, path, content) {
   // Handled by tabs.js:createTab
 }
 
-export function setFileContent(app, tab, content) {
+export function setFileContent(app, tab, content, contentType) {
+  contentType = contentType || (tab && tab.contentType) || 'markdown';
   try {
     app._suppressContentChange = true;
     var raw = content || '';
     var trimmed = raw.trim();
-    if (trimmed && trimmed.startsWith('{') && trimmed.includes('"type":"doc"')) {
-      tab.editor.commands.setContent(JSON.parse(trimmed));
+
+    if (contentType === 'json' || contentType === 'yaml') {
+      // 整文档代码块模式：渲染为带语法高亮的单一 <pre><code>，与 frontmatter 渲染同构
+      var lang = contentType;
+      var html = '<pre data-language="' + lang + '"><code class="language-' + lang + '">' + escapeHTML(raw) + '</code></pre>';
+      tab.editor.commands.setContent(html);
+    } else if (trimmed && trimmed.startsWith('{') && trimmed.includes('"type":"doc"')) {
+      try {
+        tab.editor.commands.setContent(JSON.parse(trimmed));
+      } catch (_) {
+        // 非 TipTap doc JSON（如碰巧含 "type":"doc" 的 markdown）→ 回退按 markdown 渲染
+        tab.editor.commands.setContent(renderMarkdownContent(raw));
+      }
     } else if (trimmed && trimmed.startsWith('<') && /<(p|h[1-6]|ul|ol|li|pre|blockquote|table|img|hr|div|code)\b/i.test(trimmed)) {
       tab.editor.commands.setContent(trimmed);
     } else {
@@ -175,6 +187,36 @@ function hideProgress(el) {
   if (el && el.parentNode) el.parentNode.removeChild(el);
 }
 
+// 导出前清洗 HTML：剥离 <script>、事件处理器属性（onerror 等）、javascript: 链接，
+// 防止用户在 markdown 里写的恶意 HTML 在 Puppeteer 渲染 PDF/DOCX 时执行。
+function sanitizeExportHTML(html) {
+  try {
+    var doc = new DOMParser().parseFromString('<div>' + html + '</div>', 'text/html');
+    var root = doc.body.firstChild || doc.body;
+    // 移除 <script> 与 <style>（style 影响有限但一并清理更安全）
+    root.querySelectorAll('script, link[rel="import"]').forEach(function(n) { n.remove(); });
+    // 移除所有 on* 事件属性与 javascript: 链接
+    root.querySelectorAll('*').forEach(function(el) {
+      var attrs = el.attributes;
+      for (var i = attrs.length - 1; i >= 0; i--) {
+        var name = attrs[i].name.toLowerCase();
+        var val = attrs[i].value || '';
+        if (name.indexOf('on') === 0) {
+          el.removeAttribute(attrs[i].name);
+        } else if ((name === 'href' || name === 'src' || name === 'xlink:href') && /^\s*javascript:/i.test(val)) {
+          el.removeAttribute(attrs[i].name);
+        }
+      }
+    });
+    return root.innerHTML;
+  } catch (_) {
+    // 解析失败时退回简单正则清理
+    return String(html || '')
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+      .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+  }
+}
+
 export async function exportPDF(app, pdfPath) {
   var tab = getActiveTab(app);
   if (!tab || !tab.editor || !app.isEditorReady) {
@@ -184,7 +226,7 @@ export async function exportPDF(app, pdfPath) {
   var progress = showProgress('正在导出 PDF...');
   try {
     if (!window.electronAPI) { hideProgress(progress); return; }
-    var content = tab.editor.getHTML();
+    var content = sanitizeExportHTML(tab.editor.getHTML());
     var html = '<!DOCTYPE html>\n<html><head><meta charset="UTF-8"><title>MDowner Export</title>\n<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.6;max-width:1100px;margin:0 auto;padding:40px;color:#333}h1,h2,h3,h4,h5,h6{margin-top:1.5em;margin-bottom:.5em}h1{font-size:2em}h2{font-size:1.5em}h3{font-size:1.25em}p{margin:1em 0}code{background:#f5f5f5;padding:.2em .4em;border-radius:4px;font-family:monospace}pre{background:#f5f5f5;padding:1em;border-radius:6px;overflow-x:auto}pre code{background:none;padding:0}blockquote{border-left:4px solid #ddd;margin:1em 0;padding-left:1em;color:#666}table{border-collapse:collapse;width:100%;margin:1em 0}th,td{border:1px solid #ddd;padding:.5em .75em;text-align:left}th{background:#f5f5f5;font-weight:600}img{max-width:100%;height:auto}ul,ol{padding-left:1.5em}li{margin:.25em 0}</style>\n</head><body>' + content + '</body></html>';
     var result = await window.electronAPI.generatePDF(pdfPath, html);
     hideProgress(progress);
@@ -209,7 +251,7 @@ export async function exportDOCX(app, docPath) {
   var progress = showProgress('正在导出 DOCX...');
   try {
     if (!window.electronAPI) { hideProgress(progress); return; }
-    var content = tab.editor.getHTML();
+    var content = sanitizeExportHTML(tab.editor.getHTML());
     var html = '<!DOCTYPE html>\n<html><head><meta charset="UTF-8"><title>MDowner Export</title>\n<style>@page{size:A4;margin:2cm}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.6;max-width:1100px;margin:0 auto;padding:40px;color:#333}h1,h2,h3,h4,h5,h6{margin-top:1.5em;margin-bottom:.5em}h1{font-size:2em}h2{font-size:1.5em}h3{font-size:1.25em}p{margin:1em 0}code{background:#f5f5f5;padding:.2em .4em;border-radius:4px;font-family:monospace}pre{background:#f5f5f5;padding:1em;border-radius:6px;overflow-x:auto}pre code{background:none;padding:0}blockquote{border-left:4px solid #ddd;margin:1em 0;padding-left:1em;color:#666}table{border-collapse:collapse;width:100%;margin:1em 0}th,td{border:1px solid #ddd;padding:.5em .75em;text-align:left}th{background:#f5f5f5;font-weight:600}img{max-width:100%;height:auto}ul,ol{padding-left:1.5em}li{margin:.25em 0}</style>\n</head><body>' + content + '</body></html>';
     var result = await window.electronAPI.writeFile(docPath, html);
     hideProgress(progress);

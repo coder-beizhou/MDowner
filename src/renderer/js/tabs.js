@@ -11,6 +11,8 @@ async function removeTab(app, tab, options) {
   }
 
   if (tab.editor) {
+    // 关标签前清掉跨标签共享的自动检测定时器，避免它在已销毁 editor 上 dispatch 导致 TypeError
+    if (app._autoDetectTimer) { clearTimeout(app._autoDetectTimer); app._autoDetectTimer = null; }
     tab.editor.destroy();
   }
 
@@ -52,6 +54,15 @@ function genDraftId() {
 export function normalizeFilePath(filePath) {
   if (!filePath) return '';
   return filePath.replace(/\\/g, '/').toLowerCase();
+}
+
+// 按文件扩展名推导内容类型：.json → json，.yaml/.yml → yaml，其余 → markdown
+export function deriveContentType(filePath) {
+  var ext = (filePath || '').toLowerCase().match(/\.([^.\/\\]+)$/);
+  ext = ext ? ext[1] : '';
+  if (ext === 'json') return 'json';
+  if (ext === 'yaml' || ext === 'yml') return 'yaml';
+  return 'markdown';
 }
 
 export function findTabByFilePath(app, filePath) {
@@ -97,6 +108,7 @@ export function createTab(app, filePath, content, noSwitch, options) {
   options = options || {};
   var tabId = genTabId();
   var fileName = options.fileName || (filePath ? filePath.split(/[/\\]/).pop() : '未命名');
+  var contentType = options.contentType || (filePath ? deriveContentType(filePath) : 'markdown');
 
   // 创建编辑器容器
   var wrapper = document.createElement('div');
@@ -119,6 +131,7 @@ export function createTab(app, filePath, content, noSwitch, options) {
     draftId: options.draftId || genDraftId(),
     filePath: filePath || null,
     fileName: fileName,
+    contentType: contentType,
     isModified: !!options.isModified,
     editor: editor,
     editorEl: editorDiv,
@@ -149,6 +162,10 @@ export async function switchTab(app, tabId) {
   if (app.activeTabId === tabId) return;
 
   var oldTab = getActiveTab(app);
+  // 先同步切换 activeTabId，避免连续快速切换（不 await 的 nextTab/prevTab）
+  // 在 await saveDraftForTab 期间看到同一 oldTab，导致两个 wrapper 同时可见、
+  // 编辑/保存指向错误标签的竞态。
+  app.activeTabId = tabId;
   if (oldTab && oldTab.isModified) {
     await saveDraftForTab(app, oldTab);
   }
@@ -156,7 +173,6 @@ export async function switchTab(app, tabId) {
     oldTab.wrapperEl.style.display = 'none';
   }
 
-  app.activeTabId = tabId;
   var newTab = getActiveTab(app);
   if (newTab && newTab.wrapperEl) {
     newTab.wrapperEl.style.display = '';
@@ -345,7 +361,7 @@ async function closeTabSilent(app, tabId) {
 }
 
 // 通知主进程活动标签信息
-function notifyMain(app) {
+export function notifyMain(app) {
   var tab = getActiveTab(app);
   if (!tab) return;
   if (window.electronAPI && window.electronAPI.activeTabChanged) {
@@ -372,6 +388,7 @@ export function saveTabConfig(app) {
     return {
       filePath: t.filePath || null,
       fileName: t.fileName,
+      contentType: t.contentType || 'markdown',
       draftId: t.draftId
     };
   });

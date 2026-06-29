@@ -21,7 +21,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getDraftCandidates: (tabId) => ipcRenderer.invoke('get-draft-candidates', tabId),
   listLegacyDrafts: () => ipcRenderer.invoke('list-legacy-drafts'),
   deleteDraft: (draftPath) => ipcRenderer.invoke('delete-draft', draftPath),
-  saveFile: (filePath, htmlContent) => ipcRenderer.invoke('save-file', filePath, htmlContent),
+  saveFile: (filePath, htmlContent, contentType) => ipcRenderer.invoke('save-file', filePath, htmlContent, contentType),
   showSaveDialog: (fileName) => ipcRenderer.invoke('show-save-dialog', fileName),
   showTabMenu: () => ipcRenderer.invoke('show-tab-menu'),
   generatePDF: (pdfPath, htmlContent) => ipcRenderer.invoke('generate-pdf', pdfPath, htmlContent),

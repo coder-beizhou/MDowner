@@ -329,6 +329,8 @@ function highlightCodeBlocks(doc) {
 
 // 自动检测未设置语言的代码块
 function autoDetectCodeLanguages(editor) {
+  // editor 可能在定时器触发前被 destroy（关标签），此时 view 为 null，dispatch 会抛 TypeError
+  if (!editor || editor.isDestroyed || !editor.view || !editor.state) return;
   var toUpdate = [];
   editor.state.doc.descendants(function(node, pos) {
     if (node.type.name !== 'codeBlock') return;

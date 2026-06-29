@@ -780,7 +780,7 @@
     }
     return { dom, contentDOM };
   }
-  var Fragment, found, Mark, ReplaceError, Slice, ResolvedPos, ResolveCache, resolveCacheSize, resolveCache, NodeRange, emptyAttrs, Node, TextNode, ContentMatch, TokenStream, NodeType, Attribute, MarkType, Schema, DOMParser, blockTags, ignoreTags, listTags, OPT_PRESERVE_WS, OPT_PRESERVE_WS_FULL, OPT_OPEN_LEFT, NodeContext, ParseContext, DOMSerializer, suspiciousAttributeCache;
+  var Fragment, found, Mark, ReplaceError, Slice, ResolvedPos, ResolveCache, resolveCacheSize, resolveCache, NodeRange, emptyAttrs, Node, TextNode, ContentMatch, TokenStream, NodeType, Attribute, MarkType, Schema, DOMParser2, blockTags, ignoreTags, listTags, OPT_PRESERVE_WS, OPT_PRESERVE_WS_FULL, OPT_OPEN_LEFT, NodeContext, ParseContext, DOMSerializer, suspiciousAttributeCache;
   var init_dist2 = __esm({
     "node_modules/prosemirror-model/dist/index.js"() {
       init_dist();
@@ -2614,7 +2614,7 @@
           return found2;
         }
       };
-      DOMParser = class _DOMParser {
+      DOMParser2 = class _DOMParser {
         /**
         Create a parser that targets the given schema, using the given
         parsing rules.
@@ -7617,7 +7617,7 @@
         dom = child;
       }
     if (!slice2) {
-      let parser2 = view.someProp("clipboardParser") || view.someProp("domParser") || DOMParser.fromSchema(view.state.schema);
+      let parser2 = view.someProp("clipboardParser") || view.someProp("domParser") || DOMParser2.fromSchema(view.state.schema);
       slice2 = parser2.parseSlice(dom, {
         preserveWhitespace: !!(asText || sliceData),
         context: $context,
@@ -8390,7 +8390,7 @@
       }
     }
     let startDoc = view.state.doc;
-    let parser2 = view.someProp("domParser") || DOMParser.fromSchema(view.state.schema);
+    let parser2 = view.someProp("domParser") || DOMParser2.fromSchema(view.state.schema);
     let $from = startDoc.resolve(from2);
     let sel = null, doc3 = parser2.parse(parent, {
       topNode: $from.parent,
@@ -13222,15 +13222,15 @@
           })
         });
         if (options2.slice) {
-          DOMParser.fromSchema(contentCheckSchema).parseSlice(elementFromString(content), options2.parseOptions);
+          DOMParser2.fromSchema(contentCheckSchema).parseSlice(elementFromString(content), options2.parseOptions);
         } else {
-          DOMParser.fromSchema(contentCheckSchema).parse(elementFromString(content), options2.parseOptions);
+          DOMParser2.fromSchema(contentCheckSchema).parse(elementFromString(content), options2.parseOptions);
         }
         if (options2.errorOnInvalidContent && hasInvalidContent) {
           throw new Error("[tiptap error]: Invalid HTML content", { cause: new Error(`Invalid element found: ${invalidContent}`) });
         }
       }
-      const parser2 = DOMParser.fromSchema(schema);
+      const parser2 = DOMParser2.fromSchema(schema);
       if (options2.slice) {
         return parser2.parseSlice(elementFromString(content), options2.parseOptions).content;
       }
@@ -37301,6 +37301,7 @@ img.ProseMirror-separator {
     return DecorationSet.create(doc3, decorations);
   }
   function autoDetectCodeLanguages(editor) {
+    if (!editor || editor.isDestroyed || !editor.view || !editor.state) return;
     var toUpdate = [];
     editor.state.doc.descendants(function(node2, pos) {
       if (node2.type.name !== "codeBlock") return;
@@ -40804,6 +40805,10 @@ ${content}</tr>
       await deleteDraftForTab(app, tab);
     }
     if (tab.editor) {
+      if (app._autoDetectTimer) {
+        clearTimeout(app._autoDetectTimer);
+        app._autoDetectTimer = null;
+      }
       tab.editor.destroy();
     }
     if (tab.wrapperEl && tab.wrapperEl.parentNode) {
@@ -40837,6 +40842,13 @@ ${content}</tr>
   function normalizeFilePath(filePath) {
     if (!filePath) return "";
     return filePath.replace(/\\/g, "/").toLowerCase();
+  }
+  function deriveContentType(filePath) {
+    var ext = (filePath || "").toLowerCase().match(/\.([^.\/\\]+)$/);
+    ext = ext ? ext[1] : "";
+    if (ext === "json") return "json";
+    if (ext === "yaml" || ext === "yml") return "yaml";
+    return "markdown";
   }
   function findTabByFilePath(app, filePath) {
     var normalized = normalizeFilePath(filePath);
@@ -40876,6 +40888,7 @@ ${content}</tr>
     options2 = options2 || {};
     var tabId = genTabId();
     var fileName = options2.fileName || (filePath ? filePath.split(/[/\\]/).pop() : "\u672A\u547D\u540D");
+    var contentType = options2.contentType || (filePath ? deriveContentType(filePath) : "markdown");
     var wrapper = document.createElement("div");
     wrapper.id = "tab-wrapper-" + tabId;
     wrapper.style.display = "none";
@@ -40891,6 +40904,7 @@ ${content}</tr>
       draftId: options2.draftId || genDraftId(),
       filePath: filePath || null,
       fileName,
+      contentType,
       isModified: !!options2.isModified,
       editor,
       editorEl: editorDiv,
@@ -40912,13 +40926,13 @@ ${content}</tr>
   async function switchTab(app, tabId) {
     if (app.activeTabId === tabId) return;
     var oldTab = getActiveTab(app);
+    app.activeTabId = tabId;
     if (oldTab && oldTab.isModified) {
       await saveDraftForTab(app, oldTab);
     }
     if (oldTab && oldTab.wrapperEl) {
       oldTab.wrapperEl.style.display = "none";
     }
-    app.activeTabId = tabId;
     var newTab = getActiveTab(app);
     if (newTab && newTab.wrapperEl) {
       newTab.wrapperEl.style.display = "";
@@ -41099,6 +41113,7 @@ ${content}</tr>
       return {
         filePath: t.filePath || null,
         fileName: t.fileName,
+        contentType: t.contentType || "markdown",
         draftId: t.draftId
       };
     });
@@ -41153,13 +41168,22 @@ ${content}</tr>
     var draftPath = await window.electronAPI.getDraftPath(draftKey);
     return { jsonPath: draftPath, htmlPath: null, legacyPath: null };
   }
-  function setFileContent(app, tab, content) {
+  function setFileContent(app, tab, content, contentType) {
+    contentType = contentType || tab && tab.contentType || "markdown";
     try {
       app._suppressContentChange = true;
       var raw = content || "";
       var trimmed = raw.trim();
-      if (trimmed && trimmed.startsWith("{") && trimmed.includes('"type":"doc"')) {
-        tab.editor.commands.setContent(JSON.parse(trimmed));
+      if (contentType === "json" || contentType === "yaml") {
+        var lang = contentType;
+        var html2 = '<pre data-language="' + lang + '"><code class="language-' + lang + '">' + escapeHTML(raw) + "</code></pre>";
+        tab.editor.commands.setContent(html2);
+      } else if (trimmed && trimmed.startsWith("{") && trimmed.includes('"type":"doc"')) {
+        try {
+          tab.editor.commands.setContent(JSON.parse(trimmed));
+        } catch (_) {
+          tab.editor.commands.setContent(renderMarkdownContent(raw));
+        }
       } else if (trimmed && trimmed.startsWith("<") && /<(p|h[1-6]|ul|ol|li|pre|blockquote|table|img|hr|div|code)\b/i.test(trimmed)) {
         tab.editor.commands.setContent(trimmed);
       } else {
@@ -41240,6 +41264,30 @@ ${content}</tr>
   function hideProgress(el) {
     if (el && el.parentNode) el.parentNode.removeChild(el);
   }
+  function sanitizeExportHTML(html2) {
+    try {
+      var doc3 = new DOMParser().parseFromString("<div>" + html2 + "</div>", "text/html");
+      var root = doc3.body.firstChild || doc3.body;
+      root.querySelectorAll('script, link[rel="import"]').forEach(function(n) {
+        n.remove();
+      });
+      root.querySelectorAll("*").forEach(function(el) {
+        var attrs = el.attributes;
+        for (var i = attrs.length - 1; i >= 0; i--) {
+          var name = attrs[i].name.toLowerCase();
+          var val = attrs[i].value || "";
+          if (name.indexOf("on") === 0) {
+            el.removeAttribute(attrs[i].name);
+          } else if ((name === "href" || name === "src" || name === "xlink:href") && /^\s*javascript:/i.test(val)) {
+            el.removeAttribute(attrs[i].name);
+          }
+        }
+      });
+      return root.innerHTML;
+    } catch (_) {
+      return String(html2 || "").replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "").replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "");
+    }
+  }
   async function exportPDF(app, pdfPath) {
     var tab = getActiveTab(app);
     if (!tab || !tab.editor || !app.isEditorReady) {
@@ -41252,7 +41300,7 @@ ${content}</tr>
         hideProgress(progress);
         return;
       }
-      var content = tab.editor.getHTML();
+      var content = sanitizeExportHTML(tab.editor.getHTML());
       var html2 = '<!DOCTYPE html>\n<html><head><meta charset="UTF-8"><title>MDowner Export</title>\n<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.6;max-width:1100px;margin:0 auto;padding:40px;color:#333}h1,h2,h3,h4,h5,h6{margin-top:1.5em;margin-bottom:.5em}h1{font-size:2em}h2{font-size:1.5em}h3{font-size:1.25em}p{margin:1em 0}code{background:#f5f5f5;padding:.2em .4em;border-radius:4px;font-family:monospace}pre{background:#f5f5f5;padding:1em;border-radius:6px;overflow-x:auto}pre code{background:none;padding:0}blockquote{border-left:4px solid #ddd;margin:1em 0;padding-left:1em;color:#666}table{border-collapse:collapse;width:100%;margin:1em 0}th,td{border:1px solid #ddd;padding:.5em .75em;text-align:left}th{background:#f5f5f5;font-weight:600}img{max-width:100%;height:auto}ul,ol{padding-left:1.5em}li{margin:.25em 0}</style>\n</head><body>' + content + "</body></html>";
       var result = await window.electronAPI.generatePDF(pdfPath, html2);
       hideProgress(progress);
@@ -41279,7 +41327,7 @@ ${content}</tr>
         hideProgress(progress);
         return;
       }
-      var content = tab.editor.getHTML();
+      var content = sanitizeExportHTML(tab.editor.getHTML());
       var html2 = '<!DOCTYPE html>\n<html><head><meta charset="UTF-8"><title>MDowner Export</title>\n<style>@page{size:A4;margin:2cm}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.6;max-width:1100px;margin:0 auto;padding:40px;color:#333}h1,h2,h3,h4,h5,h6{margin-top:1.5em;margin-bottom:.5em}h1{font-size:2em}h2{font-size:1.5em}h3{font-size:1.25em}p{margin:1em 0}code{background:#f5f5f5;padding:.2em .4em;border-radius:4px;font-family:monospace}pre{background:#f5f5f5;padding:1em;border-radius:6px;overflow-x:auto}pre code{background:none;padding:0}blockquote{border-left:4px solid #ddd;margin:1em 0;padding-left:1em;color:#666}table{border-collapse:collapse;width:100%;margin:1em 0}th,td{border:1px solid #ddd;padding:.5em .75em;text-align:left}th{background:#f5f5f5;font-weight:600}img{max-width:100%;height:auto}ul,ol{padding-left:1.5em}li{margin:.25em 0}</style>\n</head><body>' + content + "</body></html>";
       var result = await window.electronAPI.writeFile(docPath, html2);
       hideProgress(progress);
@@ -41627,6 +41675,10 @@ ${content}</tr>
             if (filePath) {
               try {
                 var content = await window.electronAPI.readFile(filePath);
+                if (content === null) {
+                  console.log("Tab restore skipped (not text/too large):", filePath);
+                  continue;
+                }
                 restoredTabs.push({
                   filePath,
                   fileName,
@@ -41830,6 +41882,7 @@ ${content}</tr>
             }
             return existing;
           }
+          var contentType = deriveContentType(path);
           var reusableTab = this.tabs.find(function(tab) {
             if (!tab || tab.filePath || tab.isModified || !tab.editor) return false;
             var text = typeof tab.editor.getText === "function" ? tab.editor.getText() : "";
@@ -41838,16 +41891,19 @@ ${content}</tr>
           if (reusableTab) {
             reusableTab.filePath = path || null;
             reusableTab.fileName = path ? path.split(/[/\\]/).pop() : "\u672A\u547D\u540D";
+            reusableTab.contentType = contentType;
             if (typeof content === "string" && content !== "") {
-              setFileContent(this, reusableTab, content);
+              setFileContent(this, reusableTab, content, contentType);
             }
             await switchTab(this, reusableTab.id);
             updateTabBar(this);
+            notifyMain(this);
             await saveTabConfig(this);
             return reusableTab;
           }
           var tabId = createTab(this, path, content, false, {
             fileName: path ? path.split(/[/\\]/).pop() : "\u672A\u547D\u540D",
+            contentType,
             isModified: false
           });
           return this.tabs.find(function(t) {
@@ -42130,8 +42186,15 @@ ${content}</tr>
           if (!tab.filePath) {
             return await this.saveTabAs(tab, null);
           }
-          var html2 = tab.editor.getHTML();
-          var result = await window.electronAPI.saveFile(tab.filePath, html2);
+          var contentType = tab.contentType || "markdown";
+          var payload;
+          if (contentType === "json" || contentType === "yaml") {
+            var raw = tab.editor.getText().replace(/^[\s\n]+/, "");
+            payload = raw.replace(/\s+$/, "\n");
+          } else {
+            payload = tab.editor.getHTML();
+          }
+          var result = await window.electronAPI.saveFile(tab.filePath, payload, contentType);
           if (result && result.success) {
             tab.isModified = false;
             this.updateStatusBar();
@@ -42149,20 +42212,48 @@ ${content}</tr>
         }
         async saveTabAs(tab, filePath) {
           if (!tab || !tab.editor || !window.electronAPI) return false;
+          var contentType = tab.contentType || "markdown";
           var targetPath = filePath;
           if (!targetPath) {
+            var ext = contentType === "json" ? "json" : contentType === "yaml" ? "yaml" : "md";
+            var filters;
+            if (contentType === "json") {
+              filters = [
+                { name: "JSON\u6587\u4EF6", extensions: ["json"] },
+                { name: "\u6240\u6709\u6587\u4EF6", extensions: ["*"] }
+              ];
+            } else if (contentType === "yaml") {
+              filters = [
+                { name: "YAML\u6587\u4EF6", extensions: ["yaml", "yml"] },
+                { name: "\u6240\u6709\u6587\u4EF6", extensions: ["*"] }
+              ];
+            } else {
+              filters = [
+                { name: "Markdown\u6587\u4EF6", extensions: ["md"] },
+                { name: "\u6240\u6709\u6587\u4EF6", extensions: ["*"] }
+              ];
+            }
+            var baseName = (tab.fileName || "\u672A\u547D\u540D").replace(/\.(md|markdown|txt|json|ya?ml)$/i, "");
             var saveResult = await window.electronAPI.saveFileDialog({
-              filters: [{ name: "Markdown\u6587\u4EF6", extensions: ["md"] }],
-              defaultPath: tab.fileName || "\u672A\u547D\u540D.md"
+              filters,
+              defaultPath: baseName + "." + ext
             });
             if (saveResult.canceled || !saveResult.filePath) return false;
             targetPath = saveResult.filePath;
           }
-          var html2 = tab.editor.getHTML();
-          var result = await window.electronAPI.saveFile(targetPath, html2);
+          var newContentType = deriveContentType(targetPath);
+          var payload;
+          if (newContentType === "json" || newContentType === "yaml") {
+            var raw2 = tab.editor.getText().replace(/^[\s\n]+/, "");
+            payload = raw2.replace(/\s+$/, "\n");
+          } else {
+            payload = tab.editor.getHTML();
+          }
+          var result = await window.electronAPI.saveFile(targetPath, payload, newContentType);
           if (result && result.success) {
             tab.filePath = targetPath;
             tab.fileName = targetPath.split(/[/\\]/).pop();
+            tab.contentType = newContentType;
             tab.isModified = false;
             this.updateStatusBar();
             updateTabBar(this);

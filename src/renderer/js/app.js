@@ -8,7 +8,7 @@ import { insertLink, insertImage, initImagePaste } from './dialogs.js';
 import { newFile, openFile, setFileContent, getContent, saveDraft, saveDraftForTab, deleteDraftForTab, exportPDF, exportDOCX } from './file-ops.js';
 import { applyTheme, toggleTheme, initSidebar, toggleSidebar, scheduleOutlineUpdate, updateOutline, initStatusBar, updateStatusBar, applyConfig } from './ui.js';
 import { loadConfig, saveConfig } from './config.js';
-import { initTabBar, createTab, switchTab, closeTab, discardTab, getActiveTab, nextTab, prevTab, updateTabBar, notifyModified, saveTabConfig, findTabByFilePath } from './tabs.js';
+import { initTabBar, createTab, switchTab, closeTab, discardTab, getActiveTab, nextTab, prevTab, updateTabBar, notifyModified, notifyMain, saveTabConfig, findTabByFilePath, deriveContentType } from './tabs.js';
 
 class MDownerApp {
   constructor() {
@@ -150,6 +150,11 @@ class MDownerApp {
       if (filePath) {
         try {
           var content = await window.electronAPI.readFile(filePath);
+          // read-file 在文件过大/二进制时返回 null，跳过恢复该标签
+          if (content === null) {
+            console.log('Tab restore skipped (not text/too large):', filePath);
+            continue;
+          }
           restoredTabs.push({
             filePath: filePath,
             fileName: fileName,
@@ -377,6 +382,7 @@ class MDownerApp {
       return existing;
     }
 
+    var contentType = deriveContentType(path);
     var reusableTab = this.tabs.find(function(tab) {
       if (!tab || tab.filePath || tab.isModified || !tab.editor) return false;
       var text = typeof tab.editor.getText === 'function' ? tab.editor.getText() : '';
@@ -386,17 +392,22 @@ class MDownerApp {
     if (reusableTab) {
       reusableTab.filePath = path || null;
       reusableTab.fileName = path ? path.split(/[/\\]/).pop() : '未命名';
+      reusableTab.contentType = contentType;
       if (typeof content === 'string' && content !== '') {
-        setFileContent(this, reusableTab, content);
+        setFileContent(this, reusableTab, content, contentType);
       }
       await switchTab(this, reusableTab.id);
       updateTabBar(this);
+      // switchTab 在复用已 active 标签时会 early-return，notifyMain 不会执行；
+      // 这里显式补一次，确保主进程窗口标题拿到更新后的 fileName（修复拖入文件标题仍为「未命名」）
+      notifyMain(this);
       await saveTabConfig(this);
       return reusableTab;
     }
 
     var tabId = createTab(this, path, content, false, {
       fileName: path ? path.split(/[/\\]/).pop() : '未命名',
+      contentType: contentType,
       isModified: false
     });
     return this.tabs.find(function(t) { return t.id === tabId; }) || null;
@@ -555,8 +566,17 @@ class MDownerApp {
     if (!tab.filePath) {
       return await this.saveTabAs(tab, null);
     }
-    var html = tab.editor.getHTML();
-    var result = await window.electronAPI.saveFile(tab.filePath, html);
+    var contentType = tab.contentType || 'markdown';
+    var payload;
+    if (contentType === 'json' || contentType === 'yaml') {
+      // 整文档代码块模式：NoCodeBlockFirst 会在代码块前插入空段落，getText() 带前导空行；
+      // 剥掉前导空白并保证文件以单个换行结尾，避免污染原始 JSON/YAML。
+      var raw = tab.editor.getText().replace(/^[\s\n]+/, '');
+      payload = raw.replace(/\s+$/, '\n');
+    } else {
+      payload = tab.editor.getHTML();
+    }
+    var result = await window.electronAPI.saveFile(tab.filePath, payload, contentType);
     if (result && result.success) {
       tab.isModified = false;
       this.updateStatusBar();
@@ -576,21 +596,50 @@ class MDownerApp {
   async saveTabAs(tab, filePath) {
     if (!tab || !tab.editor || !window.electronAPI) return false;
 
+    var contentType = tab.contentType || 'markdown';
     var targetPath = filePath;
     if (!targetPath) {
+      // 按 contentType 选默认扩展名与对话框过滤器
+      var ext = contentType === 'json' ? 'json' : (contentType === 'yaml' ? 'yaml' : 'md');
+      var filters;
+      if (contentType === 'json') {
+        filters = [
+          { name: 'JSON文件', extensions: ['json'] },
+          { name: '所有文件', extensions: ['*'] }
+        ];
+      } else if (contentType === 'yaml') {
+        filters = [
+          { name: 'YAML文件', extensions: ['yaml', 'yml'] },
+          { name: '所有文件', extensions: ['*'] }
+        ];
+      } else {
+        filters = [
+          { name: 'Markdown文件', extensions: ['md'] },
+          { name: '所有文件', extensions: ['*'] }
+        ];
+      }
+      var baseName = (tab.fileName || '未命名').replace(/\.(md|markdown|txt|json|ya?ml)$/i, '');
       var saveResult = await window.electronAPI.saveFileDialog({
-        filters: [{ name: 'Markdown文件', extensions: ['md'] }],
-        defaultPath: tab.fileName || '未命名.md'
+        filters: filters,
+        defaultPath: baseName + '.' + ext
       });
       if (saveResult.canceled || !saveResult.filePath) return false;
       targetPath = saveResult.filePath;
     }
-
-    var html = tab.editor.getHTML();
-    var result = await window.electronAPI.saveFile(targetPath, html);
+    // 另存为后按目标扩展名更新 contentType
+    var newContentType = deriveContentType(targetPath);
+    var payload;
+    if (newContentType === 'json' || newContentType === 'yaml') {
+      var raw2 = tab.editor.getText().replace(/^[\s\n]+/, '');
+      payload = raw2.replace(/\s+$/, '\n');
+    } else {
+      payload = tab.editor.getHTML();
+    }
+    var result = await window.electronAPI.saveFile(targetPath, payload, newContentType);
     if (result && result.success) {
       tab.filePath = targetPath;
       tab.fileName = targetPath.split(/[/\\]/).pop();
+      tab.contentType = newContentType;
       tab.isModified = false;
       this.updateStatusBar();
       updateTabBar(this);

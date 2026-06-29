@@ -75,6 +75,7 @@ let rendererReady = false;
 let pendingOpenFiles = [];
 let openingPendingFiles = false;
 let closeFlowInProgress = false;
+let closeDialogInProgress = false;  // 防止关闭对话框期间重复触发 close 事件导致对话框嵌套
 let sessionLastExitWasGraceful = false;
 let previousSessionWasGraceful = false;
 
@@ -84,7 +85,42 @@ function normalizePathForCompare(filePath) {
 
 function isOpenableFile(filePath) {
   const ext = path.extname(String(filePath || '')).toLowerCase();
-  return ['.md', '.markdown', '.txt'].includes(ext);
+  return ['.md', '.markdown', '.txt', '.json', '.yaml', '.yml'].includes(ext);
+}
+
+// 已知二进制/非文本格式的 magic-byte 签名（用于精确识别重命名文件，如 .zip 改成 .md）
+const BINARY_SIGNATURES = [
+  { name: 'ZIP 压缩包', bytes: [0x50, 0x4B, 0x03, 0x04] },        // PK\x03\x04
+  { name: '空 ZIP 压缩包', bytes: [0x50, 0x4B, 0x05, 0x06] },      // PK\x05\x06
+  { name: 'PNG 图片', bytes: [0x89, 0x50, 0x4E, 0x47] },          // \x89PNG
+  { name: 'JPEG 图片', bytes: [0xFF, 0xD8, 0xFF] },               // \xFF\xD8\xFF
+  { name: 'PDF 文档', bytes: [0x25, 0x50, 0x44, 0x46] },          // %PDF
+  { name: 'RAR 压缩包', bytes: [0x52, 0x61, 0x72, 0x21] },        // Rar!
+  { name: '7z 压缩包', bytes: [0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C] }, // 7z\xBC\xAF\x27\x1C
+  { name: 'GIF 图片', bytes: [0x47, 0x49, 0x46, 0x38] },          // GIF8
+  { name: 'BMP 图片', bytes: [0x42, 0x4D] },                       // BM
+];
+
+// 检测文件是否为二进制/非文本。返回 null 表示是文本，返回字符串则是对应格式名。
+function detectBinaryContent(buffer) {
+  if (!buffer || buffer.length === 0) return null;
+  // 1. 先检查已知 magic-byte 签名
+  for (var i = 0; i < BINARY_SIGNATURES.length; i++) {
+    var sig = BINARY_SIGNATURES[i];
+    if (buffer.length >= sig.bytes.length) {
+      var match = true;
+      for (var j = 0; j < sig.bytes.length; j++) {
+        if (buffer[j] !== sig.bytes[j]) { match = false; break; }
+      }
+      if (match) return sig.name;
+    }
+  }
+  // 2. 前 8KB 内含 null byte → 判定为二进制
+  var sampleSize = Math.min(buffer.length, 8192);
+  for (var k = 0; k < sampleSize; k++) {
+    if (buffer[k] === 0) return '二进制文件';
+  }
+  return null;
 }
 
 function extractFilesFromArgv(argv) {
@@ -358,6 +394,11 @@ async function createWindow() {
     if (closeFlowInProgress) {
       return;
     }
+    // 保存对话框正在显示期间再次点 X → 不要堆叠第二个对话框
+    if (closeDialogInProgress) {
+      e.preventDefault();
+      return;
+    }
     e.preventDefault();
 
     if (!hasUnsavedTabs) {
@@ -366,6 +407,7 @@ async function createWindow() {
     }
 
     var unsaved = null;
+    closeDialogInProgress = true;
     try {
       unsaved = await Promise.race([
         mainWindow.webContents.executeJavaScript(
@@ -375,7 +417,33 @@ async function createWindow() {
       ]);
     } catch(ex) {}
 
+    // 渲染进程超时未响应时，不能假定「无未保存」直接关闭（会静默丢数据）；
+    // 保守起见视为有未保存，弹提示让用户决定。
+    if (unsaved === null) {
+      unsaved = [];
+      var timedOut = true;
+    }
+
+    if (timedOut) {
+      try {
+        var result = await dialog.showMessageBox(mainWindow, {
+          type: 'question', buttons: ['不保存并关闭', '取消'],
+          defaultId: 1, cancelId: 1, title: '关闭窗口',
+          message: '编辑器未响应，无法确认未保存内容。是否仍要关闭？（未保存的内容可能丢失）'
+        });
+        if (result.response === 0) {
+          await finalizeGracefulClose();
+        }
+      } catch (error) {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
+      } finally {
+        closeDialogInProgress = false;
+      }
+      return;
+    }
+
     if (!unsaved || unsaved.length === 0) {
+      closeDialogInProgress = false;
       hasUnsavedTabs = false;
       await finalizeGracefulClose();
       return;
@@ -396,6 +464,8 @@ async function createWindow() {
       }
     } catch (error) {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
+    } finally {
+      closeDialogInProgress = false;
     }
   });
 
@@ -577,6 +647,8 @@ async function openFileDialog() {
     properties: ['openFile'],
     filters: [
       { name: 'Markdown文件', extensions: ['md', 'markdown', 'txt'] },
+      { name: 'JSON文件', extensions: ['json'] },
+      { name: 'YAML文件', extensions: ['yaml', 'yml'] },
       { name: '所有文件', extensions: ['*'] }
     ]
   });
@@ -606,7 +678,14 @@ async function openFile(filePath) {
       dialog.showErrorBox('文件过大', 'MDowner 不支持打开超过 5MB 的文件。');
       return;
     }
-    const content = await fsPromises.readFile(resolvedPath, 'utf-8');
+    const buffer = await fsPromises.readFile(resolvedPath);
+    // 防御重命名文件（如 .zip 改成 .md）：检查 magic-byte 与 null byte
+    const binaryKind = detectBinaryContent(buffer);
+    if (binaryKind) {
+      dialog.showErrorBox('无法打开', '该文件似乎是' + binaryKind + '，不是文本文件。MDowner 仅支持文本格式的文档（.md / .txt / .json / .yaml）。');
+      return;
+    }
+    const content = buffer.toString('utf-8');
     safeSend('open-file', { path: resolvedPath, content });
 
     const config = await loadConfig();
@@ -632,6 +711,8 @@ async function saveFileAs() {
   const result = await dialog.showSaveDialog(mainWindow, {
     filters: [
       { name: 'Markdown文件', extensions: ['md'] },
+      { name: 'JSON文件', extensions: ['json'] },
+      { name: 'YAML文件', extensions: ['yaml', 'yml'] },
       { name: '所有文件', extensions: ['*'] }
     ],
     defaultPath: defaultPath
@@ -927,13 +1008,30 @@ function registerIPCHandlers() {
     return await dialog.showSaveDialog(mainWindow, options);
   });
 
+  // read-file / read-file-if-exists：供 restoreTabs 恢复标签使用。
+  // 这条路径绕过了 openFile 的 size + 二进制校验，这里补齐，防止恢复到已损坏/重命名的文件。
+  async function readTextFileChecked(filePath) {
+    var stat = await fsPromises.stat(filePath);
+    if (stat.size > 5 * 1024 * 1024) {
+      dialog.showErrorBox('文件过大', 'MDowner 不支持打开超过 5MB 的文件：\n' + filePath);
+      return null;
+    }
+    var buffer = await fsPromises.readFile(filePath);
+    var binaryKind = detectBinaryContent(buffer);
+    if (binaryKind) {
+      dialog.showErrorBox('无法打开', '该文件似乎是' + binaryKind + '，不是文本文件：\n' + filePath);
+      return null;
+    }
+    return buffer.toString('utf-8');
+  }
+
   ipcMain.handle('read-file', async (_, filePath) => {
-    return await fsPromises.readFile(filePath, 'utf-8');
+    return await readTextFileChecked(filePath);
   });
 
   ipcMain.handle('read-file-if-exists', async (_, filePath) => {
     try {
-      return await fsPromises.readFile(filePath, 'utf-8');
+      return await readTextFileChecked(filePath);
     } catch (error) {
       if (error && error.code === 'ENOENT') return null;
       throw error;
@@ -1041,9 +1139,16 @@ function registerIPCHandlers() {
   });
 
   // 渲染进程保存文件（HTML → Markdown → 写入磁盘）
-  ipcMain.handle('save-file', async (_, filePath, htmlContent) => {
+  ipcMain.handle('save-file', async (_, filePath, htmlContent, contentType) => {
     try {
-      var content = turndownService.turndown(htmlContent || '');
+      contentType = contentType || 'markdown';
+      var content;
+      if (contentType === 'json' || contentType === 'yaml') {
+        // JSON/YAML 标签：渲染进程发来的是 editor.getText()（纯文本），直接写回，不走 turndown
+        content = String(htmlContent || '');
+      } else {
+        content = turndownService.turndown(htmlContent || '');
+      }
       await fsPromises.writeFile(filePath, content, 'utf-8');
       return { success: true };
     } catch (error) {

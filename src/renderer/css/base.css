@@ -28,32 +28,45 @@ html, body {
 
 /* 滚动条样式 */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--bg-secondary);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--text-muted);
-  border-radius: 4px;
+  background: color-mix(in srgb, var(--text-muted) 45%, transparent);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-secondary);
+  background: color-mix(in srgb, var(--text-secondary) 60%, transparent);
+  background-clip: padding-box;
 }
 
+/* 选区色 */
+::selection {
+  background: var(--accent-tint);
+}
 
 /* 焦点样式 */
 :focus {
   outline: none;
 }
 
-:focus-visible {
-  outline: 2px solid var(--accent-color);
-  outline-offset: 2px;
+/* 焦点环只作用于真正的交互控件，不罩在编辑器正文区域 */
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-tint);
 }
 
 /* 按钮基础样式 */
@@ -108,15 +121,17 @@ a:hover {
 
 #status-signature {
   margin-left: auto;
-  font-family: 'Segoe Script', 'Brush Script MT', 'Freestyle Script', cursive;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
   color: var(--text-muted);
-  opacity: 0.5;
+  opacity: 0.4;
+  text-transform: lowercase;
 }
 
 /* 代码字体 */
 code, pre {
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-family: var(--font-mono);
 }
 
 /* 标签栏 */
@@ -195,7 +210,7 @@ code, pre {
   justify-content: center;
   width: 20px;
   height: 20px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   margin-left: 4px;
   opacity: 0;
   font-size: 16px;
@@ -220,7 +235,7 @@ code, pre {
   justify-content: center;
   width: 32px;
   height: 28px;
-  border-radius: 4px;
+  border-radius: var(--radius);
   margin: 0 4px;
   flex-shrink: 0;
   font-size: 18px;
