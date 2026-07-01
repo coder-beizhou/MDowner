@@ -179,14 +179,51 @@ export function initTableOverlay(app) {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(function() { app.updateTableControls(); }, 100);
   });
+
+  // 表格控件点击委托：一次绑定，避免每次 updateTableControls 重建 per-btn listener
+  app._tableOverlay.addEventListener('click', function(e) {
+    var btn = e.target.closest('.table-ctrl-btn');
+    if (!btn) return;
+    e.stopPropagation();
+    var action = btn.dataset.action;
+    var tableIdx = parseInt(btn.dataset.table, 10);
+    var wrappers = document.querySelectorAll('.tableWrapper');
+    var wrapperEl = (tableIdx >= 0 && wrappers[tableIdx]) ? wrappers[tableIdx] : null;
+    var tableEl = wrapperEl ? wrapperEl.querySelector('table') : null;
+
+    if (action === 'delTable') {
+      deleteTableAt(app, tableEl);
+      setTimeout(function() { if (app.editor) app.editor.commands.focus(); }, 50);
+    } else if (action === 'alignLeft' || action === 'alignCenter' || action === 'alignRight') {
+      var alignVal = action === 'alignLeft' ? 'left' : (action === 'alignCenter' ? 'center' : 'right');
+      var selCells = tableEl ? tableEl.querySelectorAll('.selectedCell') : [];
+      if (selCells.length > 0) {
+        selCells.forEach(function(cell) { cell.style.textAlign = alignVal; });
+      } else if (wrapperEl) {
+        wrapperEl.classList.remove('table-align-center', 'table-align-right');
+        if (alignVal === 'center') wrapperEl.classList.add('table-align-center');
+        else if (alignVal === 'right') wrapperEl.classList.add('table-align-right');
+      }
+    }
+  });
 }
 
 export function updateTableControls(app) {
   if (!app._tableOverlay) return;
 
+  // 性能：先从 selection 判定是否在表格内。不在表格且 overlay 已空 → 早返回，
+  // 避免每键对非表格内容做 querySelectorAll + getBoundingClientRect。
+  var inTable = false;
+  if (app.editor && app.isEditorReady && !app.editor.isDestroyed) {
+    var $anchor = app.editor.state.selection.$anchor;
+    for (var d = $anchor.depth; d >= 0; d--) {
+      if ($anchor.node(d).type.name === 'table') { inTable = true; break; }
+    }
+  }
+  if (!inTable && !app._tableOverlay.innerHTML) return;
+
   var activeTab = app.getActiveTab ? app.getActiveTab() : null;
   var editorEl = activeTab ? activeTab.editorEl : document.getElementById('editor-container');
-  if (!editorEl) return;
   const container = document.getElementById('editor-container');
   if (!editorEl || !container) return;
 
@@ -196,11 +233,11 @@ export function updateTableControls(app) {
 
   // 找到光标所在的表格索引
   var activeTableIdx = -1;
-  if (app.editor && app.isEditorReady && wrappers.length > 0) {
-    var $anchor = app.editor.state.selection.$anchor;
-    for (var d = $anchor.depth; d >= 0; d--) {
-      if ($anchor.node(d).type.name === 'table') {
-        var tablePos = $anchor.start(d);
+  if (inTable && wrappers.length > 0) {
+    var $anchor2 = app.editor.state.selection.$anchor;
+    for (var d2 = $anchor2.depth; d2 >= 0; d2--) {
+      if ($anchor2.node(d2).type.name === 'table') {
+        var tablePos = $anchor2.start(d2);
         for (var w = 0; w < wrappers.length; w++) {
           var tbl = wrappers[w].querySelector('table');
           if (tbl) {
@@ -225,10 +262,9 @@ export function updateTableControls(app) {
     var tableRect = tableEl.getBoundingClientRect();
     var top = tableRect.top - containerRect.top + container.scrollTop;
     var left = tableRect.left - containerRect.left + container.scrollLeft;
-    var tw = tableRect.width;
 
     // 删除表格按钮（左上角）
-    html += '<button class="table-ctrl-btn table-ctrl-del-table" style="top:' + (top - 22) + 'px;left:' + (left - 22) + 'px" data-action="delTable" data-table="' + activeTableIdx + '">×</button>';
+    html += '<button class="table-ctrl-btn table-ctrl-del-table" style="top:' + (top - 22) + 'px;left:' + (left - 22) + 'px" data-action="delTable" data-table="' + activeTableIdx + '" data-wrapper-id="' + (wrapper.id || '') + '">×</button>';
 
     // 对齐按钮暂时注释——CSS 兼容性问题待解决
     // var alignTop = top - 22;
@@ -241,41 +277,7 @@ export function updateTableControls(app) {
 
   // 一次性设置所有 HTML
   app._tableOverlay.innerHTML = html;
-
-  // 为按钮绑定事件
-  app._tableOverlay.querySelectorAll('.table-ctrl-btn').forEach(function(btn) {
-    btn.addEventListener('click', function(e) {
-      e.stopPropagation();
-      var action = btn.dataset.action;
-      var tableIdx = parseInt(btn.dataset.table);
-      var wrapperEl = wrappers[tableIdx];
-      var tableEl = wrapperEl ? wrapperEl.querySelector('table') : null;
-
-      if (action === 'delTable') {
-        deleteTableAt(app, tableEl);
-        // 删表后重新聚焦编辑器，否则 Ctrl+Z 无效
-        setTimeout(function() { if (app.editor) app.editor.commands.focus(); }, 50);
-      } else if (action === 'alignLeft' || action === 'alignCenter' || action === 'alignRight') {
-        var alignVal = action === 'alignLeft' ? 'left' : (action === 'alignCenter' ? 'center' : 'right');
-        // 检查是否有选中的单元格 → 只对齐格子
-        var selCells = tableEl ? tableEl.querySelectorAll('.selectedCell') : [];
-        if (selCells.length > 0) {
-          selCells.forEach(function(cell) { cell.style.textAlign = alignVal; });
-        } else {
-          // 对齐整个表格 → 用 CSS class
-          if (wrapperEl) {
-            wrapperEl.classList.remove('table-align-center', 'table-align-right');
-            if (alignVal === 'center') {
-              wrapperEl.classList.add('table-align-center');
-            } else if (alignVal === 'right') {
-              wrapperEl.classList.add('table-align-right');
-            }
-            // left: 移除所有对齐 class 即恢复默认
-          }
-        }
-      }
-    });
-  });
+  // 点击处理改为委托（见 initTableOverlay 一次绑定），此处不再每次重建 per-btn listener。
 }
 
 export function deleteTableAt(app, tableEl) {

@@ -31,6 +31,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('new-file');
     ipcRenderer.on('new-file', callback);
   },
+  onNewFileAs: (callback) => {
+    ipcRenderer.removeAllListeners('new-file-as');
+    ipcRenderer.on('new-file-as', (event, contentType) => callback(contentType));
+  },
+  onFormatAction: (callback) => {
+    ipcRenderer.removeAllListeners('format-action');
+    ipcRenderer.on('format-action', (event, action) => callback(action));
+  },
+  onInsertAction: (callback) => {
+    ipcRenderer.removeAllListeners('insert-action');
+    ipcRenderer.on('insert-action', (event, action) => callback(action));
+  },
   onOpenFile: (callback) => {
     ipcRenderer.removeAllListeners('open-file');
     ipcRenderer.on('open-file', (event, data) => callback(data));

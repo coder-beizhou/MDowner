@@ -449,19 +449,11 @@ async function createWindow() {
       return;
     }
 
+    // 直接交给渲染进程的「保存更改」自定义弹窗处理（支持逐标签勾选）。
+    // 此前这里还会先弹一个系统消息框「是否保存全部？」——与渲染进程弹窗重复，
+    // 造成关闭时弹两遍窗（一遍系统、一遍程序）。已改为不再弹系统消息框。
     try {
-      var msg = unsaved.length === 1
-        ? '「' + unsaved[0].fileName + '」有未保存的更改，是否保存？'
-        : unsaved.length + ' 个标签页有未保存的更改，是否保存全部？';
-      var result = await dialog.showMessageBox(mainWindow, {
-        type: 'question', buttons: ['保存全部', '不保存', '取消'],
-        defaultId: 0, cancelId: 2, title: '保存更改', message: msg
-      });
-      if (result.response === 0) {
-        safeSend('save-all-tabs-close');
-      } else if (result.response === 1) {
-        safeSend('discard-all-tabs-close');
-      }
+      safeSend('save-all-tabs-close');
     } catch (error) {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
     } finally {
@@ -508,6 +500,25 @@ async function openFilesInPrimaryWindow(filePaths) {
 }
 
 // 创建菜单
+function buildRecentFilesSubmenu() {
+  // 同步读 config.json 取最近文件（菜单需同步返回，loadConfig 是异步，故用同步 fs）
+  try {
+    const cfgPath = path.join(app.getPath('userData'), 'config.json');
+    const raw = fs.readFileSync(cfgPath, 'utf-8');
+    const cfg = JSON.parse(raw || '{}');
+    const recent = Array.isArray(cfg.recentFiles) ? cfg.recentFiles.slice(0, 10) : [];
+    if (!recent.length) {
+      return [{ label: '无最近文件', enabled: false }];
+    }
+    return recent.map(function(fp) {
+      var base = path.basename(fp);
+      return { label: base, click: function() { openFile(fp); } };
+    });
+  } catch (_) {
+    return [{ label: '无最近文件', enabled: false }];
+  }
+}
+
 function createMenu() {
   const template = [
     {
@@ -519,9 +530,27 @@ function createMenu() {
           click: () => newFile()
         },
         {
+          label: '新建 Markdown',
+          accelerator: 'CmdOrCtrl+Alt+N',
+          click: () => safeSend('new-file-as', 'markdown')
+        },
+        {
+          label: '新建 JSON',
+          click: () => safeSend('new-file-as', 'json')
+        },
+        {
+          label: '新建 YAML',
+          click: () => safeSend('new-file-as', 'yaml')
+        },
+        { type: 'separator' },
+        {
           label: '打开',
           accelerator: 'CmdOrCtrl+O',
           click: () => openFileDialog()
+        },
+        {
+          label: '最近文件',
+          submenu: buildRecentFilesSubmenu()
         },
         { type: 'separator' },
         {
@@ -540,13 +569,12 @@ function createMenu() {
           accelerator: 'CmdOrCtrl+Shift+P',
           click: () => exportPDF()
         },
-        // TODO: DOCX 导出待完善
-        // {
-        //   label: '导出DOCX',
-        //   accelerator: 'CmdOrCtrl+Shift+D',
-        //   click: () => exportDOCX()
-        // },
-        // { type: 'separator' },
+        {
+          label: '导出DOCX',
+          accelerator: 'CmdOrCtrl+Shift+D',
+          click: () => exportDOCX()
+        },
+        { type: 'separator' },
         {
           label: '退出',
           accelerator: 'Alt+F4',
@@ -565,7 +593,42 @@ function createMenu() {
         { label: '粘贴', accelerator: 'CmdOrCtrl+V', role: 'paste' },
         { type: 'separator' },
         { label: '查找', accelerator: 'CmdOrCtrl+F', click: () => safeSend('open-find') },
-        { label: '全选', accelerator: 'CmdOrCtrl+A', role: 'selectAll' }
+        { label: '全选', accelerator: 'CmdOrCtrl+A', role: 'selectAll' },
+        { type: 'separator' },
+        {
+          label: '格式',
+          submenu: [
+            { label: '加粗', accelerator: 'CmdOrCtrl+B', click: () => safeSend('format-action', 'bold') },
+            { label: '斜体', accelerator: 'CmdOrCtrl+I', click: () => safeSend('format-action', 'italic') },
+            { label: '删除线', click: () => safeSend('format-action', 'strike') },
+            { label: '行内代码', accelerator: 'CmdOrCtrl+E', click: () => safeSend('format-action', 'code') },
+            { type: 'separator' },
+            { label: '正文', accelerator: 'CmdOrCtrl+0', click: () => safeSend('format-action', 'paragraph') },
+            { label: '标题1', accelerator: 'CmdOrCtrl+1', click: () => safeSend('format-action', 'h1') },
+            { label: '标题2', accelerator: 'CmdOrCtrl+2', click: () => safeSend('format-action', 'h2') },
+            { label: '标题3', accelerator: 'CmdOrCtrl+3', click: () => safeSend('format-action', 'h3') },
+            { label: '标题4', accelerator: 'CmdOrCtrl+4', click: () => safeSend('format-action', 'h4') },
+            { label: '标题5', accelerator: 'CmdOrCtrl+5', click: () => safeSend('format-action', 'h5') },
+            { label: '标题6', accelerator: 'CmdOrCtrl+6', click: () => safeSend('format-action', 'h6') },
+            { type: 'separator' },
+            { label: '无序列表', accelerator: 'CmdOrCtrl+Shift+U', click: () => safeSend('format-action', 'bulletList') },
+            { label: '有序列表', accelerator: 'CmdOrCtrl+Shift+O', click: () => safeSend('format-action', 'orderedList') },
+            { label: '任务列表', accelerator: 'CmdOrCtrl+Shift+T', click: () => safeSend('format-action', 'taskList') },
+            { type: 'separator' },
+            { label: '引用块', click: () => safeSend('format-action', 'blockquote') },
+            { label: '代码块', accelerator: 'CmdOrCtrl+Alt+C', click: () => safeSend('format-action', 'codeBlock') }
+          ]
+        },
+        {
+          label: '插入',
+          submenu: [
+            { label: '分割线', click: () => safeSend('insert-action', 'hr') },
+            { label: '代码块', click: () => safeSend('insert-action', 'codeBlock') },
+            { label: '表格', click: () => safeSend('insert-action', 'table') },
+            { label: '链接', accelerator: 'CmdOrCtrl+K', click: () => safeSend('insert-action', 'link') },
+            { label: '图片', click: () => safeSend('insert-action', 'image') }
+          ]
+        }
       ]
     },
     {
@@ -576,12 +639,15 @@ function createMenu() {
           accelerator: 'CmdOrCtrl+\\',
           click: () => safeSend('toggle-sidebar')
         },
-        { type: 'separator' },
         {
           label: '切换主题',
           accelerator: 'CmdOrCtrl+Shift+L',
           click: () => safeSend('toggle-theme')
         },
+        { type: 'separator' },
+        { label: '放大', accelerator: 'CmdOrCtrl+=', role: 'zoomIn' },
+        { label: '缩小', accelerator: 'CmdOrCtrl+-', role: 'zoomOut' },
+        { label: '重置缩放', accelerator: 'CmdOrCtrl+Shift+0', role: 'resetZoom' },
         { type: 'separator' },
         { label: '全屏', accelerator: 'F11', role: 'togglefullscreen' },
         { label: '开发者工具', accelerator: 'F12', role: 'toggleDevTools' }
@@ -694,6 +760,8 @@ async function openFile(filePath) {
     })].slice(0, 10);
     config.lastOpenedFile = resolvedPath;
     await saveConfig(config);
+    // 刷新菜单的「最近文件」子菜单
+    createMenu();
   } catch (error) {
     dialog.showErrorBox('错误', `无法打开文件: ${error.message}`);
   }

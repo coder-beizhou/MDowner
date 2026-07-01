@@ -448,6 +448,38 @@ class MDownerApp {
   closeActiveTab() { var t = getActiveTab(this); if (t) closeTab(this, t.id); }
   nextTab() { nextTab(this); }
   prevTab() { prevTab(this); }
+  // 菜单「格式」动作分发
+  applyFormatAction(action) {
+    if (!this.editor || !this.isEditorReady) return;
+    var chain = this.editor.chain().focus();
+    switch (action) {
+      case 'bold': chain.toggleBold().run(); break;
+      case 'italic': chain.toggleItalic().run(); break;
+      case 'strike': chain.toggleStrike().run(); break;
+      case 'code': chain.toggleCode().run(); break;
+      case 'paragraph': chain.setParagraph().run(); break;
+      case 'h1': case 'h2': case 'h3': case 'h4': case 'h5': case 'h6':
+        chain.toggleHeading({ level: parseInt(action.slice(1), 10) }).run(); break;
+      case 'bulletList': chain.toggleBulletList().run(); break;
+      case 'orderedList': chain.toggleOrderedList().run(); break;
+      case 'taskList': chain.toggleTaskList().run(); break;
+      case 'blockquote': chain.toggleBlockquote().run(); break;
+      case 'codeBlock': chain.toggleCodeBlock().run(); break;
+    }
+    updateToolbarState(this);
+  }
+  // 菜单「插入」动作分发
+  applyInsertAction(action) {
+    if (!this.editor || !this.isEditorReady) return;
+    var chain = this.editor.chain().focus();
+    switch (action) {
+      case 'hr': chain.setHorizontalRule().run(); break;
+      case 'codeBlock': chain.toggleCodeBlock().run(); break;
+      case 'table': this.insertTable(); break;
+      case 'link': this.insertLink(); break;
+      case 'image': this.insertImage(); break;
+    }
+  }
   applyTheme(t) { applyTheme(this, t); }
   toggleTheme() { toggleTheme(this); }
   initSidebar() { initSidebar(this); }
@@ -465,7 +497,9 @@ class MDownerApp {
     if (this._suppressContentChange) return;
     var tab = getActiveTab(this);
     if (tab && tab.findQuery && tab.editor) {
-      var searchState = setSearchQuery(tab.editor, tab.findQuery);
+      // 搜索插件已对 docChanged 自动重扫，这里只读当前状态刷新计数，
+      // 不再 dispatch setSearchQuery（此前会导致每次按键双扫全文）。
+      var searchState = getSearchState(tab.editor);
       tab.findActiveIndex = searchState.activeIndex;
       this.renderFindCount(searchState);
     }
@@ -500,6 +534,9 @@ class MDownerApp {
 
     var self = this;
     window.electronAPI.onNewFile(function() { createTab(self); });
+    window.electronAPI.onNewFileAs(function(contentType) { createTab(self, null, '', false, { contentType: contentType }); });
+    window.electronAPI.onFormatAction(function(action) { self.applyFormatAction(action); });
+    window.electronAPI.onInsertAction(function(action) { self.applyInsertAction(action); });
     window.electronAPI.onOpenFile(async function(data) { await self.openFileInTab(data.path, data.content); });
     window.electronAPI.onFileSaved(function() {
       var t = getActiveTab(self);

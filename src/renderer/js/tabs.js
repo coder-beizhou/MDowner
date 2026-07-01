@@ -247,6 +247,7 @@ export function updateTabBar(app) {
       (tab.isModified ? ' modified' : '');
     item.title = tab.filePath || '未命名';
     item.setAttribute('data-tab-id', tab.id);
+    item.draggable = true;
 
     var title = document.createElement('span');
     title.className = 'tab-title';
@@ -291,6 +292,56 @@ export function updateTabBar(app) {
       e.stopPropagation();
       e.preventDefault();
       closeTab(app, tab.id);
+    });
+
+    // 拖拽排序
+    item.addEventListener('dragstart', function(e) {
+      app._dragTabId = tab.id;
+      item.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      // 某些平台需要 setData 才会触发 dragover
+      try { e.dataTransfer.setData('text/plain', tab.id); } catch (_) {}
+    });
+
+    item.addEventListener('dragover', function(e) {
+      if (!app._dragTabId || app._dragTabId === tab.id) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      var rect = item.getBoundingClientRect();
+      var after = (e.clientX - rect.left) > rect.width / 2;
+      item.classList.toggle('drop-after', after);
+      item.classList.toggle('drop-before', !after);
+    });
+
+    item.addEventListener('dragleave', function() {
+      item.classList.remove('drop-before', 'drop-after');
+    });
+
+    item.addEventListener('drop', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      var srcId = app._dragTabId;
+      item.classList.remove('drop-before', 'drop-after');
+      if (!srcId || srcId === tab.id) return;
+      var after = item.classList.contains('drop-after');
+      // 算出目标插入位：先按当前顺序定位，去掉源项后再判定
+      var srcIdx = app.tabs.findIndex(function(t) { return t.id === srcId; });
+      var dstIdx = app.tabs.findIndex(function(t) { return t.id === tab.id; });
+      if (srcIdx === -1 || dstIdx === -1) return;
+      var moved = app.tabs.splice(srcIdx, 1)[0];
+      // 去掉源项后重新定位目标
+      var newDstIdx = app.tabs.findIndex(function(t) { return t.id === tab.id; });
+      app.tabs.splice(after ? newDstIdx + 1 : newDstIdx, 0, moved);
+      app._dragTabId = null;
+      updateTabBar(app);
+      saveTabConfig(app);
+    });
+
+    item.addEventListener('dragend', function() {
+      app._dragTabId = null;
+      // 清掉所有残留指示类
+      var leftover = document.querySelectorAll('.tab-item.dragging, .tab-item.drop-before, .tab-item.drop-after');
+      leftover.forEach(function(el) { el.classList.remove('dragging', 'drop-before', 'drop-after'); });
     });
   });
 

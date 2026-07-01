@@ -179,6 +179,20 @@ code, pre {
   background-color: var(--bg-tertiary);
 }
 
+/* 拖拽排序态 */
+.tab-item.dragging {
+  opacity: 0.45;
+  cursor: grabbing;
+}
+
+.tab-item.drop-before {
+  box-shadow: inset 2px 0 0 var(--accent-color);
+}
+
+.tab-item.drop-after {
+  box-shadow: inset -2px 0 0 var(--accent-color);
+}
+
 .tab-item.active {
   background-color: var(--bg-primary);
   color: var(--text-primary);

@@ -58,10 +58,33 @@ function focusOutlineHeading(app, pos) {
   app.editor.commands.setTextSelection(pos);
 }
 
+// 大纲点击用事件委托一次绑定（不再每次重建 per-item listener）
+var _outlineDelegated = false;
+function ensureOutlineDelegation(app) {
+  if (_outlineDelegated) return;
+  var outline = document.getElementById('outline');
+  if (!outline) return;
+  _outlineDelegated = true;
+  outline.addEventListener('mousedown', function(e) {
+    var item = e.target.closest('.outline-item');
+    if (!item) return;
+    if (e.button === 0 && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
+      e.preventDefault();
+    }
+  });
+  outline.addEventListener('click', function(e) {
+    var item = e.target.closest('.outline-item');
+    if (!item) return;
+    e.preventDefault();
+    focusOutlineHeading(app, parseInt(item.dataset.pos, 10));
+  });
+}
+
 export function updateOutline(app) {
   if (!app.editor || !app.isEditorReady) return;
   const outline = document.getElementById('outline');
   if (!outline) return;
+  ensureOutlineDelegation(app);
 
   const headings = [];
   app.editor.state.doc.descendants((node, pos) => {
@@ -70,63 +93,78 @@ export function updateOutline(app) {
     }
   });
 
+  // 结构签名：未变则跳过整块重建（纯文本在标题内编辑时不触发重排）
+  const sig = headings.map(h => h.level + ':' + h.text + ':' + h.pos).join('|');
+  if (sig === app._outlineSig) return;
+  app._outlineSig = sig;
+
   if (headings.length === 0) {
-    outline.innerHTML = '<div class="outline-empty">暂无标题</div>';
+    if (outline.innerHTML !== '<div class="outline-empty">暂无标题</div>') {
+      outline.innerHTML = '<div class="outline-empty">暂无标题</div>';
+    }
     return;
   }
 
   outline.innerHTML = headings.map(function(h) {
     return '<a class="outline-item" href="#heading-' + h.pos + '" data-level="' + h.level + '" data-pos="' + h.pos + '">' + escapeHTML(h.text) + '</a>';
   }).join('');
-
-  outline.querySelectorAll('.outline-item').forEach(item => {
-    item.addEventListener('mousedown', function(e) {
-      if (e.button === 0 && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
-        e.preventDefault();
-      }
-    });
-    item.addEventListener('click', function(e) {
-      e.preventDefault();
-      focusOutlineHeading(app, parseInt(item.dataset.pos, 10));
-    });
-  });
 }
 
 export function initStatusBar(app) {
   app.updateStatusBar();
 }
 
-function getStatusText(app) {
-  if (!app.editor || !app.isEditorReady || typeof app.editor.getText !== 'function') {
-    return '';
-  }
-  return app.editor.getText({ blockSeparator: '\n' }) || '';
-}
-
-function countVisibleCharacters(text) {
-  return String(text || '').replace(/\s/g, '').length;
-}
-
-function countVisibleLines(text) {
-  var normalized = String(text || '').replace(/\r\n?/g, '\n');
-  if (!normalized) return 1;
-  return normalized.split('\n').length;
+// 行数：从 doc 顶层块数推算（避免每键全文 getText + split）
+function countDocLines(app) {
+  if (!app.editor || !app.isEditorReady) return 1;
+  var doc = app.editor.state.doc;
+  var lines = 0;
+  doc.forEach(function(block) {
+    // 段落/标题等按其内含换行数 +1 估算；代码块按其文本行数
+    if (block.type.name === 'codeBlock') {
+      var t = block.textContent;
+      lines += t.length ? t.split('\n').length : 1;
+    } else {
+      var text = block.textContent;
+      lines += (text ? text.split('\n').length : 1);
+    }
+  });
+  return lines || 1;
 }
 
 export function updateStatusBar(app) {
   if (!app.editor || !app.isEditorReady) return;
-  const wordsElement = document.getElementById('status-words');
-  const linesElement = document.getElementById('status-lines');
-  const modifiedElement = document.getElementById('status-modified');
-  var text = getStatusText(app);
-  if (wordsElement) {
-    wordsElement.textContent = `字数: ${countVisibleCharacters(text)}`;
-  }
-  if (linesElement) {
-    linesElement.textContent = `行数: ${countVisibleLines(text)}`;
-  }
+  // 防抖 250ms：连续输入时不每键都全文统计
+  if (app._statusBarTimer) { clearTimeout(app._statusBarTimer); }
+  app._statusBarTimer = setTimeout(function() {
+    app._statusBarTimer = null;
+    renderStatusBar(app);
+  }, 250);
+  // 立即刷新已修改标记（轻量，不涉全文）
+  var modifiedElement = document.getElementById('status-modified');
   if (modifiedElement) {
     modifiedElement.textContent = app.isModified ? '已修改' : '';
+  }
+}
+
+function renderStatusBar(app) {
+  if (!app.editor || !app.isEditorReady || app.editor.isDestroyed) return;
+  const wordsElement = document.getElementById('status-words');
+  const linesElement = document.getElementById('status-lines');
+  // 优先用 CharacterCount 扩展的增量统计（已注册），避免每键全文 getText + 正则
+  var cc = app.editor.storage && app.editor.storage.characterCount;
+  if (wordsElement) {
+    var chars = 0;
+    try { chars = cc && cc.characters ? cc.characters() : 0; } catch (_) { chars = 0; }
+    if (!chars) {
+      // 回退：空文档或无扩展时
+      var t = app.editor.getText ? app.editor.getText() : '';
+      chars = String(t).replace(/\s/g, '').length;
+    }
+    wordsElement.textContent = '字数: ' + chars;
+  }
+  if (linesElement) {
+    linesElement.textContent = '行数: ' + countDocLines(app);
   }
 }
 

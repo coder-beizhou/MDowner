@@ -1,4 +1,5 @@
 // 编辑器初始化与配置
+import { createDropdown } from './dropdown.js';
 import { Editor, Extension, mergeAttributes } from '../../../node_modules/@tiptap/core/dist/index.js';
 import StarterKit from '../../../node_modules/@tiptap/starter-kit/dist/index.js';
 import CodeBlock from '../../../node_modules/@tiptap/extension-code-block/dist/index.js';
@@ -261,8 +262,22 @@ const CodeHighlight = Extension.create({
       state: {
         init(_, { doc }) { return highlightCodeBlocks(doc); },
         apply(tr, oldSet, _oldState, newState) {
-          if (tr.docChanged) return highlightCodeBlocks(newState.doc);
-          return oldSet.map(tr.mapping, tr.doc);
+          // 文档未变：仅随 mapping 移动已有装饰
+          if (!tr.docChanged) return oldSet.map(tr.mapping, tr.doc);
+          // 性能：只重新高亮「受本次改动波及」的代码块，其余沿用旧装饰并按 mapping 平移。
+          // 此前是对全文所有代码块重跑 hljs（含 highlightAuto 试 40 种语言），大文档每键卡顿。
+          var mapped = oldSet.map(tr.mapping, tr.doc);
+          var affected = getChangedCodeBlockRanges(tr, newState.doc, oldSet);
+          if (!affected.length) return mapped;
+          // 清掉受影响块区间内的旧装饰，再叠加新装饰
+          var rm = [];
+          affected.forEach(function(block) {
+            mapped.find(block.pos, block.pos + block.node.nodeSize).forEach(function(d) { rm.push(d); });
+          });
+          if (rm.length) mapped = mapped.remove(rm);
+          // highlightCodeBlocks 基于 newState.doc 构建，装饰坐标已是新坐标，直接叠加
+          var fresh = highlightCodeBlocks(newState.doc, affected);
+          return mapped.add(newState.doc, fresh.find());
         }
       },
       props: {
@@ -298,19 +313,48 @@ function findCodeBlocks(doc) {
   return blocks;
 }
 
-function highlightCodeBlocks(doc) {
-  var decorations = [];
+// 计算本次事务波及到的代码块区间（pos..pos+nodeSize）。
+// 判据：代码块区间与任一 step 的映射后区间相交，或代码块是新增/被替换的。
+function getChangedCodeBlockRanges(tr, doc, oldSet) {
+  var changed = [];
+  if (!tr.steps.length) return changed;
+  // 收集每个 step 影响的文档区间（映射到新 doc 坐标）
+  var ranges = [];
+  for (var i = 0; i < tr.steps.length; i++) {
+    var step = tr.steps[i];
+    var map = tr.mapping.maps[i];
+    // 步骤可能删除/插入；用 map.forEach 遍历其影响的区间
+    map.forEach(function(sfrom, sto, tfrom, tto) {
+      ranges.push({ from: tfrom, to: tto });
+    });
+  }
   findCodeBlocks(doc).forEach(function(block) {
+    var bFrom = block.pos;
+    var bTo = block.pos + block.node.nodeSize;
+    for (var k = 0; k < ranges.length; k++) {
+      var r = ranges[k];
+      // 相交即视为受影响
+      if (r.from < bTo && r.to > bFrom) { changed.push(block); return; }
+    }
+  });
+  return changed;
+}
+
+// 高亮代码块。affectedBlocks 为可选：只重新高亮这些块；
+// 其余块的旧装饰由调用方通过 oldSet.map 平移保留（见 apply）。
+function highlightCodeBlocks(doc, affectedBlocks) {
+  var decorations = [];
+  var blocks = affectedBlocks && affectedBlocks.length ? affectedBlocks : findCodeBlocks(doc);
+  blocks.forEach(function(block) {
     var from = block.pos + 1;
     var lang = block.node.attrs.language || '';
     var text = block.node.textContent;
+    // 仅对已知语言做精确高亮；无语言的块不在此处猜语言（交给 autoDetectCodeLanguages
+    // 先 setNodeMarkup 设语言，再触发本插件高亮）。去掉 highlightAuto 避免 40 语言全试的每键开销。
+    if (!lang || HL_LANGS.indexOf(lang) === -1) return;
     var result;
     try {
-      if (lang && HL_LANGS.indexOf(lang) !== -1) {
-        result = hljs.highlight(text, { language: lang });
-      } else {
-        result = hljs.highlightAuto(text, HL_LANGS);
-      }
+      result = hljs.highlight(text, { language: lang });
     } catch(e) {
       return;
     }
@@ -531,11 +575,59 @@ export function initEditor(app, editorElement, tabId) {
     });
 
     applyEditorStyles(app, editorElement);
+    bindCodeLanguagePicker(app, editorInstance);
     return editorInstance;
   } catch (error) {
     console.error('Failed to initialize editor:', error);
     return null;
   }
+}
+
+// 代码块语言选择器：点代码块右上角语言标签 → 弹下拉选语言
+function bindCodeLanguagePicker(app, editor) {
+  if (!editor || !editor.view || !editor.view.dom) return;
+  var dom = editor.view.dom;
+  dom.addEventListener('click', function(e) {
+    var pre = e.target.closest && e.target.closest('pre[data-language]');
+    if (!pre) return;
+    // 判定点击是否落在右上角标签区域（与 ::after 同位置）
+    var rect = pre.getBoundingClientRect();
+    var inLabelX = e.clientX >= rect.right - 60 && e.clientX <= rect.right;
+    var inLabelY = e.clientY >= rect.top && e.clientY <= rect.top + 26;
+    if (!inLabelX || !inLabelY) return;
+    e.preventDefault();
+    e.stopPropagation();
+    // 定位 codeBlock：posAtDOM(pre,0) 返回内容起始位，其父节点即 codeBlock
+    var contentPos;
+    try { contentPos = editor.view.posAtDOM(pre, 0); } catch (_) { return; }
+    var $pos = editor.state.doc.resolve(contentPos);
+    var codeNode = $pos.parent;
+    if (!codeNode || codeNode.type.name !== 'codeBlock') return;
+    openCodeLanguageDropdown(editor, pre, contentPos - 1, codeNode.attrs.language || '');
+  });
+}
+
+function openCodeLanguageDropdown(editor, triggerEl, nodePos, currentLang) {
+  var langs = HL_LANGS.slice().sort(function(a, b) { return a.localeCompare(b); });
+  var items = [
+    { label: '自动检测', value: '', isActive: !currentLang, hint: '' },
+    { label: '无', value: 'text', isActive: currentLang === 'text', hint: '' }
+  ].concat(langs.map(function(l) {
+    return { label: l, value: l, isActive: l === currentLang, hint: '' };
+  }));
+  createDropdown({
+    triggerEl: triggerEl,
+    placement: 'bottom-end',
+    getItems: function() { return items; },
+    onSelect: function(item) {
+      var newLang = item.value === 'text' ? '' : item.value;
+      var langAttr = newLang === '' ? null : newLang;
+      editor.chain().focus()
+        .setNodeMarkup(nodePos, undefined, { language: langAttr })
+        .run();
+      return false;
+    }
+  });
 }
 
 export function applyEditorStyles(app, editorElement) {

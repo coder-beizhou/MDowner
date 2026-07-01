@@ -78,7 +78,7 @@ export function initDragDrop(app) {
     +   '<text x="32" y="46" text-anchor="middle" font-size="11" font-weight="700" fill="var(--accent-color)" stroke="none" font-family="-apple-system,system-ui,sans-serif">MD</text>'
     + '</svg>'
     + '<div class="drop-title">拖放到此处打开</div>'
-    + '<div class="drop-hint">.md  ·  .markdown  ·  .txt</div>'
+    + '<div class="drop-hint">.md  ·  .markdown  ·  .txt  ·  .json  ·  .yaml  ·  .yml</div>'
     + '</div>';
   document.body.appendChild(dropIndicator);
 
