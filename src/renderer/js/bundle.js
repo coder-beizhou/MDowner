@@ -38404,6 +38404,7 @@ img.ProseMirror-separator {
       "#drop-indicator .drop-title{font-size:15px;font-weight:600;letter-spacing:.3px;",
       "color:rgba(255,255,255,.94);margin-bottom:6px;}",
       "#drop-indicator .drop-hint{font-size:12px;letter-spacing:.4px;color:rgba(255,255,255,.55);}",
+      "#drop-indicator .drop-sig{margin-top:14px;font-family:Segoe Script,Brush Script MT,cursive;font-size:11px;letter-spacing:.5px;color:rgba(139,92,246,.6);}",
       "@keyframes dropOverlayIn{from{opacity:0}to{opacity:1}}",
       "@keyframes dropCardIn{from{opacity:0;transform:translateY(10px) scale(.96)}to{opacity:1;transform:none}}",
       "@keyframes dropFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}"
@@ -38411,7 +38412,7 @@ img.ProseMirror-separator {
     document.head.appendChild(styleEl);
     var dropIndicator = document.createElement("div");
     dropIndicator.id = "drop-indicator";
-    dropIndicator.innerHTML = '<div class="drop-card"><svg class="drop-icon" viewBox="0 0 64 64" fill="none" stroke="var(--accent-color)" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"><path d="M16 8h22l12 12v32a4 4 0 0 1-4 4H16a4 4 0 0 1-4-4V12a4 4 0 0 1 4-4z"/><path d="M38 8v12h12"/><text x="32" y="46" text-anchor="middle" font-size="11" font-weight="700" fill="var(--accent-color)" stroke="none" font-family="-apple-system,system-ui,sans-serif">MD</text></svg><div class="drop-title">\u62D6\u653E\u5230\u6B64\u5904\u6253\u5F00</div><div class="drop-hint">.md  \xB7  .markdown  \xB7  .txt  \xB7  .json  \xB7  .yaml  \xB7  .yml</div></div>';
+    dropIndicator.innerHTML = '<div class="drop-card"><svg class="drop-icon" viewBox="0 0 64 64" fill="none" stroke="var(--accent-color)" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"><path d="M16 8h22l12 12v32a4 4 0 0 1-4 4H16a4 4 0 0 1-4-4V12a4 4 0 0 1 4-4z"/><path d="M38 8v12h12"/><text x="32" y="46" text-anchor="middle" font-size="11" font-weight="700" fill="var(--accent-color)" stroke="none" font-family="-apple-system,system-ui,sans-serif">MD</text></svg><div class="drop-title">\u62D6\u653E\u5230\u6B64\u5904\u6253\u5F00</div><div class="drop-hint">.md  \xB7  .markdown  \xB7  .txt  \xB7  .json  \xB7  .yaml  \xB7  .yml</div><div class="drop-sig">\u2726 BEIZHOU</div></div>';
     document.body.appendChild(dropIndicator);
     function showIndicator() {
       dropIndicator.classList.add("visible");
@@ -42816,6 +42817,7 @@ ${content}</tr>
       };
       document.addEventListener("DOMContentLoaded", function() {
         console.log("DOM loaded, starting MDowner...");
+        console.log("%c\u2727 BEIZHOU \u2727", "color:#8b5cf6;font-size:16px;font-weight:bold;");
         window.mdownerApp = new MDownerApp();
       });
     }

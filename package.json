@@ -1,10 +1,10 @@
 {
   "name": "mdowner",
-  "version": "2.7.0",
+  "version": "2.7.1",
   "description": "A Typora-like Markdown editor",
   "main": "src/main/index.js",
   "type": "commonjs",
-  "author": "MDowner Team",
+  "author": "BEIZHOU",
   "license": "MIT",
   "scripts": {
     "build:renderer": "esbuild src/renderer/js/app.js --bundle --outfile=src/renderer/js/bundle.js --format=iife --platform=browser",
@@ -134,6 +134,7 @@
     "turndown": "^7.2.4"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "electron": "^25.9.0",
     "electron-builder": "^26.8.1",
     "esbuild": "^0.28.0"

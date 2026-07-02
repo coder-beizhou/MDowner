@@ -63,6 +63,7 @@ export function initDragDrop(app) {
     '#drop-indicator .drop-title{font-size:15px;font-weight:600;letter-spacing:.3px;',
       'color:rgba(255,255,255,.94);margin-bottom:6px;}',
     '#drop-indicator .drop-hint{font-size:12px;letter-spacing:.4px;color:rgba(255,255,255,.55);}',
+    '#drop-indicator .drop-sig{margin-top:14px;font-family:Segoe Script,Brush Script MT,cursive;font-size:11px;letter-spacing:.5px;color:rgba(139,92,246,.6);}',
     '@keyframes dropOverlayIn{from{opacity:0}to{opacity:1}}',
     '@keyframes dropCardIn{from{opacity:0;transform:translateY(10px) scale(.96)}to{opacity:1;transform:none}}',
     '@keyframes dropFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}'
@@ -79,6 +80,7 @@ export function initDragDrop(app) {
     + '</svg>'
     + '<div class="drop-title">拖放到此处打开</div>'
     + '<div class="drop-hint">.md  ·  .markdown  ·  .txt  ·  .json  ·  .yaml  ·  .yml</div>'
+    + '<div class="drop-sig">✦ BEIZHOU</div>'
     + '</div>';
   document.body.appendChild(dropIndicator);
 

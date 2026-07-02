@@ -121,12 +121,18 @@ a:hover {
 
 #status-signature {
   margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.1em;
+  /* 开发者彩蛋：花体 BEIZHOU 签名，低调藏于状态栏右下 */
+  font-family: 'Segoe Script', 'Brush Script MT', 'Freestyle Script', 'Snell Roundhand', cursive;
+  font-size: 13px;
+  letter-spacing: 0.04em;
   color: var(--text-muted);
-  opacity: 0.4;
-  text-transform: lowercase;
+  opacity: 0.42;
+  cursor: default;
+  transition: opacity var(--transition-fast), color var(--transition-fast);
+}
+#status-signature:hover {
+  opacity: 0.7;
+  color: var(--accent-color);
 }
 
 /* 代码字体 */

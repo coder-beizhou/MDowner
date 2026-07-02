@@ -843,5 +843,7 @@ class MDownerApp {
 // 应用启动
 document.addEventListener('DOMContentLoaded', function() {
   console.log('DOM loaded, starting MDowner...');
+  // 开发者署名彩蛋 —— 控制台花体签名（仅 DevTools 可见）
+  console.log('%c✧ BEIZHOU ✧', 'color:#8b5cf6;font-size:16px;font-weight:bold;');
   window.mdownerApp = new MDownerApp();
 });
