@@ -14,7 +14,9 @@ jobs:
         with:
           node-version: 20
       - run: npm install
-      - run: npm run build:mac
+      # --publish never：electron-builder 在 tag push 的 CI 下默认会尝试发布到 GitHub Releases，
+      # 缺 GH_TOKEN 时构建失败。本地/CI 只产出产物，发布由人工或 release 工作流处理。
+      - run: npx electron-builder --mac --publish never
       - uses: actions/upload-artifact@v4
         with:
           name: MDowner-macOS
